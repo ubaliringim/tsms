@@ -1,0 +1,10 @@
+node_modules
+.pnpm-store
+.turbo
+.next
+.expo
+dist
+coverage
+pnpm-lock.yaml
+**/next-env.d.ts
+artifacts

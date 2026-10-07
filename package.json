@@ -1,0 +1,36 @@
+{
+  "name": "tsms",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=24.16.0 <25",
+    "pnpm": "12.3.4"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test && node --test tests/toolchain.test.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "smoke": "node scripts/smoke.mjs",
+    "mobile:check": "pnpm --filter @tsms/student-mobile exec expo install --check",
+    "mobile:export": "pnpm --filter @tsms/student-mobile export:android"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.10.1",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "turbo": "2.11.7",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  }
+}

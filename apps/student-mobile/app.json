@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "TSMS Student",
+    "slug": "tsms-student",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic"
+  }
+}

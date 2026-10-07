@@ -1,0 +1,121 @@
+{
+  "project": "TSMS",
+  "fullName": "TeamStack School Management System",
+  "company": "TeamStack Technologies LTD",
+  "updatedAt": "2026-10-07",
+  "phase": "foundation",
+  "stage": "0",
+  "stageName": "Engineering Foundation",
+  "stageStatus": "accepted",
+  "stageAcceptedAt": "2026-10-07",
+  "task": "0.1",
+  "status": "accepted",
+  "reviewStatus": "accepted",
+  "nextTask": null,
+  "nextPlannedStage": {
+    "stage": "1",
+    "name": "Database & Local Infrastructure",
+    "implementationAuthorized": false
+  },
+  "blocked": false,
+  "blockers": [],
+  "standingRisks": [
+    {
+      "type": "dependency_security",
+      "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
+      "details": "Two high-severity transitive advisories, both with no patched upstream release. The owner accepted temporary dispositions on 2026-10-07 based on documented non-reachability. Both remain installed, both vulnerable code paths remain present on disk, and neither is resolved or remediated. pnpm audit --audit-level=high still exits non-zero and is still reported as FAIL. Re-review if any review trigger in the register fires.",
+      "ownerDecision": "accepted",
+      "ownerDecisionAt": "2026-10-07",
+      "disposition": "open_temporarily_accepted_with_documented_non_reachability",
+      "remediated": false,
+      "resolved": false,
+      "riskRegister": "docs/security/DEPENDENCY_RISK_REGISTER.md"
+    }
+  ],
+  "auditPolicy": {
+    "technicalAuditStatus": "fail",
+    "findings": 2,
+    "severity": "high",
+    "suppressionApplied": false,
+    "thresholdLowered": false,
+    "broadIgnoreRules": false,
+    "newUnreviewedHighFindingsAcceptable": false,
+    "futureTask": "Implement a controlled mechanism distinguishing reviewed temporary exceptions from new vulnerabilities, without hiding the raw audit result. Not built during Stage 0 closure."
+  },
+  "securityDisposition": [
+    {
+      "advisory": "GHSA-86w9-cpqp-85rv",
+      "package": "node-forge@1.4.0",
+      "cve": "CVE-2026-85393",
+      "severity": "high",
+      "cvss": 8.7,
+      "cwe": "CWE-347",
+      "patchedUpstream": false,
+      "packageStillInstalled": true,
+      "introducedBy": "@tsms/student-mobile (expo)",
+      "runtimeClass": "mobile bundling/build tooling; absent from all deployed runtimes and from the exported mobile bundle",
+      "vulnerableFunction": "node-forge lib/rsa.js key.verify() default RSASSA-PKCS1-V1_5 scheme",
+      "attackerInputReachable": false,
+      "ownerDecision": "accepted",
+      "ownerDecisionAt": "2026-10-07",
+      "disposition": "open_temporarily_accepted_with_documented_non_reachability",
+      "resolved": false
+    },
+    {
+      "advisory": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces@3.0.3",
+      "cve": "CVE-2026-93687",
+      "severity": "high",
+      "cvss": 8.7,
+      "cwe": "CWE-674",
+      "patchedUpstream": false,
+      "packageStillInstalled": true,
+      "introducedBy": "tsms root devDependencies (eslint-config-next) and @tsms/student-mobile (expo, react-native)",
+      "runtimeClass": "lint tooling and mobile bundling tooling; absent from all deployed runtimes and from the exported mobile bundle",
+      "vulnerableFunction": "braces lib/compile.js and lib/expand.js recursive AST walkers without depth guards",
+      "attackerInputReachable": false,
+      "ownerDecision": "accepted",
+      "ownerDecisionAt": "2026-10-07",
+      "disposition": "open_temporarily_accepted_with_documented_non_reachability",
+      "resolved": false
+    }
+  ],
+  "validation": {
+    "frozenInstall": "pass",
+    "format": "pass",
+    "formatCheck": "pass",
+    "lint": "pass",
+    "typecheck": "pass",
+    "test": "pass",
+    "testCount": 15,
+    "build": "pass",
+    "check": "pass",
+    "mobileCompatibility": "pass",
+    "androidJavaScriptExport": "pass",
+    "smoke": "pass_with_observed_transient_failure",
+    "smokeNote": "First run in the analysis session failed the api fail-fast assertion at scripts/smoke.mjs:62 (child still running at the fixed 10s deadline at scripts/smoke.mjs:60, exitCode null instead of 1). Direct and isolated spawn/poll reproductions behaved correctly and exited 1 in about one second. Four subsequent full smoke runs passed all six assertions. Most likely Windows first-exec latency; root cause not conclusively determined. Implementation deliberately not changed. Hosted Linux CI has not validated this behaviour.",
+    "diffCheck": "pass",
+    "targetedSecretScan": "no_matches",
+    "dependencyAudit": "fail_2_high_no_patched_release",
+    "deploymentArtifactScan": "pass_no_vulnerable_code_in_any_artifact",
+    "hostedCI": "not_run",
+    "nativeDeviceBuild": "not_run"
+  },
+  "knownIssues": [
+    "Two open high-severity dependency advisories with owner-accepted temporary dispositions; unresolved and tracked.",
+    "pnpm smoke timing fragility on Windows caused by a fixed 10-second deadline in scripts/smoke.mjs.",
+    "Hosted Linux GitHub Actions workflow has not run.",
+    "Native Android/iOS device and store builds have not run.",
+    "ESLint 9.39.5 is upstream-deprecated and retained for peer compatibility with the React lint chain."
+  ],
+  "workingTree": "80 uncommitted files, intent-to-add; no commits and no remote. artifacts/ is gitignored scratch evidence. A Stage 0 baseline commit is proposed but not created.",
+  "nextAction": "Create the Stage 0 baseline commit once authorized. Then await explicit Stage 1 authorization; do not begin Stage 1 implementation until granted. Continue tracking the two accepted advisory dispositions and apply upstream fixes when published.",
+  "doNot": [
+    "Start Stage 1 without explicit owner authorization",
+    "Implement product functionality",
+    "Suppress audit failures or weaken security controls",
+    "Mark the accepted advisories resolved while the packages remain installed",
+    "Accept or revoke a risk disposition without the project owner",
+    "Deploy to production"
+  ]
+}

@@ -1,0 +1,45 @@
+packages:
+  - apps/*
+  - packages/*
+
+saveExact: true
+engineStrict: true
+strictPeerDependencies: true
+minimumReleaseAgeStrict: true
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  '@nestjs/core': false
+minimumReleaseAgeExclude:
+  - '@expo/cli@57.0.28'
+  - '@expo/config-plugins@57.0.10'
+  - '@expo/config@57.0.10'
+  - '@expo/image-utils@0.11.6'
+  - '@expo/metro-config@57.0.13'
+  - '@expo/metro-file-map@57.0.4'
+  - '@expo/prebuild-config@57.0.17'
+  - '@expo/require-utils@57.0.6'
+  - '@expo/router-server@57.0.12'
+  - '@next/env@16.4.0'
+  - '@next/eslint-plugin-next@16.4.0'
+  - '@next/swc-darwin-arm64@16.4.0'
+  - '@next/swc-darwin-x64@16.4.0'
+  - '@next/swc-linux-arm64-gnu@16.4.0'
+  - '@next/swc-linux-arm64-musl@16.4.0'
+  - '@next/swc-linux-x64-gnu@16.4.0'
+  - '@next/swc-linux-x64-musl@16.4.0'
+  - '@next/swc-win32-arm64-msvc@16.4.0'
+  - '@next/swc-win32-x64-msvc@16.4.0'
+  - babel-preset-expo@57.0.14
+  - eslint-config-next@16.4.0
+  - expo-asset@57.0.19
+  - expo-constants@57.0.21
+  - expo-modules-autolinking@57.0.14
+  - expo-modules-core@57.0.21
+  - expo@57.0.27
+  - next@16.4.0
+
+# xcode uses only uuid.v4(); 11.1.1 preserves CommonJS and fixes GHSA-w5hq-g745-h8pq.
+overrides:
+  xcode>uuid: 11.1.1

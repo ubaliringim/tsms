@@ -1,0 +1,23 @@
+{
+  "name": "@tsms/student-mobile",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "index.ts",
+  "scripts": {
+    "dev": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "typecheck": "tsc --noEmit",
+    "export:android": "expo export --platform android"
+  },
+  "dependencies": {
+    "expo": "57.0.27",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.4",
+    "typescript": "6.0.3"
+  }
+}
