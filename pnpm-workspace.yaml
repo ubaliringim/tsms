@@ -10,6 +10,13 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+  # Downloads the Prisma query/migration/schema engine binaries that Prisma 7
+  # requires. Reviewed: dist/scripts/postinstall.js only fetches platform
+  # engines from the Prisma release CDN.
+  '@prisma/engines': true
+  # prisma's only install script is a monorepo-development preinstall helper
+  # whose target file is not shipped in the published package. Denied explicitly.
+  prisma: false
   '@nestjs/core': false
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.28'
@@ -41,5 +48,26 @@ minimumReleaseAgeExclude:
   - next@16.4.0
 
 # xcode uses only uuid.v4(); 11.1.1 preserves CommonJS and fixes GHSA-w5hq-g745-h8pq.
+#
+# deepmerge-ts: fixes GHSA-ggr8-5vv4-36mx (CVE-2026-40345, stack exhaustion on
+# recursive object graphs, CWE-674). @prisma/config pins 7.1.5 exactly. 8.x is a
+# major bump, but @prisma/config only calls the `deepmerge` entry point as c12's
+# config merger. That signature is unchanged in 8.x, and 8.x's breaking changes
+# (Map values deep-merged by default, DeepMergeMetaMetaData/DeepMergeIntoFunctionUtils
+# renames, deepmergeInto no longer leak-mutating) do not apply to merging plain
+# configuration objects. 8.x also adds circular-reference handling, which is the
+# actual fix.
+#
+# mysql2: fixes GHSA-3f6p-5ww8-9rcr (rogue-server/MITM auth-plugin downgrade to
+# mysql_clear_password leaks the password in plaintext) and GHSA-rgwj-5xj2-c3m3.
+# prisma pins 3.15.3 exactly. TSMS uses PostgreSQL only; this driver is installed
+# solely for Prisma's MySQL/MariaDB datasource support and TSMS never opens a
+# connection through it. 3.24.5 is the newest stable release in the 3.x line.
+#
+# Both overrides are scoped to the single parent that introduces each package, so
+# a future unrelated consumer of deepmerge-ts or mysql2 is NOT silently upgraded.
+# Remove each override as soon as its Prisma parent ships an already-patched pin.
 overrides:
   xcode>uuid: 11.1.1
+  '@prisma/config>deepmerge-ts': 8.0.2
+  'prisma>mysql2': 3.24.5

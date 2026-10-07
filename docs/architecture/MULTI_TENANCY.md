@@ -21,3 +21,17 @@ TeamStack operational access does not imply unrestricted student-data access. Fu
 ## Required future verification
 
 Build fixtures for Schools A and B. Test reads, writes, forged IDs, membership switching, object references, files, background processing, caches, and semantic retrieval. Permission failures must not leak existence/content. Add appropriate regression tests as those capabilities arrive. Stage 0 has no tenant data or claims of implemented tenant isolation.
+
+## Stage 1 preparation
+
+Stage 1 establishes database machinery without any tenant concept. There are no tenant tables, no `tenant_id`
+columns, no tenant middleware, no query filters, and no Row-Level Security.
+
+Shared-schema multi-tenancy needs none of that to be viable in the foundation: a Prisma client is stateless with
+respect to tenants, so a single shared client is correct and no per-tenant client was built. `packages/database`
+re-exports `PrismaClient` and `DatabaseTransactionClient` so that Stage 3 repositories can require trusted tenant
+context without reaching into generated internals. No Stage 1 table commits to a primary-key or uniqueness scheme
+that would block a later tenant-aware `tenant_id` column with composite unique constraints and foreign keys.
+
+The one model that does exist, `InfrastructureProbe`, is an infrastructure-only probe with no tenant, school, or
+student meaning, and is scheduled for replacement when the first real domain model lands.

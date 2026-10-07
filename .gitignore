@@ -16,3 +16,5 @@ android/
 ios/
 artifacts/
 next-env.d.ts
+# Prisma Client output. Regenerate with `pnpm db:generate`; never commit it.
+packages/database/src/generated

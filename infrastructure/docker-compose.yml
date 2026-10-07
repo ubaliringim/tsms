@@ -1,0 +1,88 @@
+# TSMS local development infrastructure.
+#
+# Development only. Every credential in this file is a throwaway local value
+# that never leaves the developer machine and is never used in staging or
+# production. See infrastructure/README.md for the full workflow.
+#
+# Start:  docker compose -f infrastructure/docker-compose.yml up -d
+# Status: docker compose -f infrastructure/docker-compose.yml ps
+# Stop:   docker compose -f infrastructure/docker-compose.yml stop
+# Reset:  docker compose -f infrastructure/docker-compose.yml down -v   # destroys data
+
+name: tsms
+
+services:
+  postgres:
+    # PostgreSQL 17 with the pgvector extension already compiled in.
+    # Pinned to an exact pgvector release (0.8.7) and the PostgreSQL major
+    # (17) instead of the floating `pg17` tag so local builds stay
+    # reproducible. pgvector availability is a foundation choice only; Stage 1
+    # creates no vector columns, embeddings, or retrieval logic.
+    image: pgvector/pgvector:0.8.7-pg17
+    container_name: tsms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tsms
+      POSTGRES_PASSWORD: tsms_local_development
+      POSTGRES_DB: tsms
+      # Development-only deterministic collation. Do not copy to production.
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+    ports:
+      # Bound to loopback so the database is not exposed on the LAN.
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tsms -d tsms']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # There is deliberately no separate "create the test database" service.
+  #
+  # An earlier revision used a one-shot init container for `tsms_test`. It was
+  # removed because `docker compose up --wait` treats a service that exits as a
+  # failure, so `pnpm infra:up` returned a non-zero exit code even though both
+  # services were healthy.
+  #
+  # It was also redundant: `prisma migrate deploy` creates the target database
+  # when it does not exist, and `pnpm db:test:migrate` calls exactly that against
+  # the guarded `TEST_DATABASE_URL`. `pnpm test:integration` therefore provisions
+  # its own database. The test-database safety guard in packages/database is what
+  # keeps that command away from the `tsms` database, not the container.
+
+  redis:
+    # Pinned to an exact patch release of the mature Redis 8.8 line rather than
+    # the newest 8.10 line or the floating `latest` tag.
+    image: redis:8.8.3-alpine
+    container_name: tsms-redis
+    restart: unless-stopped
+    # Dev-only requirepass. Remove this flag for a loopback-only unauthenticated
+    # local Redis; it exists here so the REDIS_URL password path is exercised.
+    command:
+      - redis-server
+      - --requirepass
+      - tsms_local_redis
+      - --appendonly
+      - 'no'
+      - --save
+      - ''
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    environment:
+      REDIS_PASSWORD: tsms_local_redis
+
+volumes:
+  postgres-data:
+    name: tsms-postgres-data
+  redis-data:
+    name: tsms-redis-data

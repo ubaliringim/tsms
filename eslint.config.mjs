@@ -12,6 +12,7 @@ export default [
       '**/.turbo/**',
       '**/next-env.d.ts',
       'artifacts/**',
+      'packages/database/src/generated/**',
     ],
   },
   js.configs.recommended,

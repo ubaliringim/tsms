@@ -1,7 +1,15 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "globalDependencies": ["tsconfig.json"],
-  "globalEnv": ["NODE_ENV", "API_HOST", "API_PORT", "WORKER_HOST", "WORKER_HEALTH_PORT"],
+  "globalEnv": [
+    "NODE_ENV",
+    "API_HOST",
+    "API_PORT",
+    "WORKER_HOST",
+    "WORKER_HEALTH_PORT",
+    "DATABASE_URL",
+    "REDIS_URL"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -14,6 +22,11 @@
     "test": {
       "dependsOn": ["build"],
       "outputs": []
+    },
+    "test:integration": {
+      "dependsOn": ["build"],
+      "outputs": [],
+      "cache": false
     },
     "dev": {
       "dependsOn": ["^build"],

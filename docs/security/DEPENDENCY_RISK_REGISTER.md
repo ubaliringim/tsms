@@ -1,9 +1,9 @@
 # Dependency risk register
 
 Owner: TeamStack Technologies LTD
-Stage: 0 - Engineering Foundation (ACCEPTED)
+Stage: 1 - Database & Local Infrastructure (implementation authorized 2026-10-07; Stage 0 accepted)
 Last analysis: 2026-10-07
-Last owner decision: 2026-10-07
+Last owner decision: 2026-10-07 (Stage 0 dispositions)
 Analysed lockfile: `pnpm-lock.yaml` (pnpm 12.3.4, Node 24.16.0)
 
 This register is the authoritative record of TSMS dependency-security dispositions. It supersedes the
@@ -37,14 +37,123 @@ Dispositions use three states. They are not interchangeable.
 
 ## Register summary
 
-| ID                  | Package    | Version | Severity | Workspace(s)                          | Runtime class                                        | Disposition                                                  | Owner decision      |
-| ------------------- | ---------- | ------- | -------- | ------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------ | ------------------- |
-| GHSA-86w9-cpqp-85rv | node-forge | 1.4.0   | High     | `@tsms/student-mobile`                | mobile bundling/build tooling (not runtime)          | OPEN - TEMPORARILY ACCEPTED WITH DOCUMENTED NON-REACHABILITY | ACCEPTED 2026-10-07 |
-| GHSA-vfj7-8cjw-p6xm | braces     | 3.0.3   | High     | `tsms` (root), `@tsms/student-mobile` | lint tooling + mobile bundling tooling (not runtime) | OPEN - TEMPORARILY ACCEPTED WITH DOCUMENTED NON-REACHABILITY | ACCEPTED 2026-10-07 |
-| GHSA-w5hq-g745-h8pq | uuid       | 11.1.1  | (fixed)  | via Expo config-plugins               | build tooling                                        | RESOLVED (scoped override `xcode>uuid: 11.1.1`)              | n/a                 |
+| ID                  | Package      | Version | Severity | Workspace(s)                          | Runtime class                                        | Disposition                                                  | Owner decision                                  |
+| ------------------- | ------------ | ------- | -------- | ------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------- |
+| GHSA-86w9-cpqp-85rv | node-forge   | 1.4.0   | High     | `@tsms/student-mobile`                | mobile bundling/build tooling (not runtime)          | OPEN - TEMPORARILY ACCEPTED WITH DOCUMENTED NON-REACHABILITY | ACCEPTED 2026-10-07                             |
+| GHSA-vfj7-8cjw-p6xm | braces       | 3.0.3   | High     | `tsms` (root), `@tsms/student-mobile` | lint tooling + mobile bundling tooling (not runtime) | OPEN - TEMPORARILY ACCEPTED WITH DOCUMENTED NON-REACHABILITY | ACCEPTED 2026-10-07                             |
+| GHSA-ggr8-5vv4-36mx | deepmerge-ts | 8.0.2   | High     | `@tsms/database` (via Prisma CLI)     | build/CLI tooling                                    | RESOLVED (scoped override; patched version installed)        | n/a - remediated by agent, no acceptance needed |
+| GHSA-3f6p-5ww8-9rcr | mysql2       | 3.24.5  | High     | `@tsms/database` (via Prisma CLI)     | build/CLI tooling                                    | RESOLVED (scoped override; patched version installed)        | n/a - remediated by agent, no acceptance needed |
+| GHSA-rgwj-5xj2-c3m3 | mysql2       | 3.24.5  | Moderate | `@tsms/database` (via Prisma CLI)     | build/CLI tooling                                    | RESOLVED (scoped override; patched version installed)        | n/a - remediated by agent, no acceptance needed |
+| GHSA-w5hq-g745-h8pq | uuid         | 11.1.1  | (fixed)  | via Expo config-plugins               | build tooling                                        | RESOLVED (scoped override `xcode>uuid: 11.1.1`)              | n/a                                             |
 
-`pnpm audit --audit-level=high` still exits non-zero with two high findings. That remains the correct
-technical result and is reported as FAIL. See "Audit policy" below.
+`pnpm audit --audit-level=high` still exits non-zero with two high findings. That remains the correct technical
+result and is reported as FAIL. See "Audit policy" below.
+
+## Stage 1 advisory remediation (2026-10-07)
+
+Adding `prisma@7.10.0` for the database package introduced three advisories that did not exist in the Stage 0
+baseline. All three were **remediated rather than accepted**, because each had a patched upstream release. The
+Stage 0 owner acceptance does not extend to them and was not relied on.
+
+| Advisory                                                                 | Package      | Introduced | Patched range | Override applied                       | Now installed |
+| ------------------------------------------------------------------------ | ------------ | ---------- | ------------- | -------------------------------------- | ------------- |
+| [GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx) | deepmerge-ts | 7.1.5      | `>= 8.0.0`    | `'@prisma/config>deepmerge-ts': 8.0.2` | 8.0.2         |
+| [GHSA-3f6p-5ww8-9rcr](https://github.com/advisories/GHSA-3f6p-5ww8-9rcr) | mysql2       | 3.15.3     | `>= 3.22.0`   | `'prisma>mysql2': 3.24.5`              | 3.24.5        |
+| [GHSA-rgwj-5xj2-c3m3](https://github.com/advisories/GHSA-rgwj-5xj2-c3m3) | mysql2       | 3.15.3     | `>= 3.23.1`   | `'prisma>mysql2': 3.24.5`              | 3.24.5        |
+
+CVE assignments: CVE-2026-40345 for GHSA-ggr8-5vv4-36mx. GHSA-3f6p-5ww8-9rcr has no assigned CVE.
+GHSA-rgwj-5xj2-c3m3 is a separate `mysql2` finding; confirm its CVE assignment in the advisory record before citing
+one.
+
+Exact dependency chains, verified with `pnpm why -r` after the overrides:
+
+```
+deepmerge-ts@8.0.2
+└─ @prisma/config@7.10.0   (pins deepmerge-ts = "7.1.5", an exact version)
+   └─ prisma@7.10.0
+      ├─ @prisma/client@7.10.0  → @tsms/database (dependencies)
+      └─ @tsms/database (devDependencies)
+
+mysql2@3.24.5
+└─ prisma@7.10.0            (pins mysql2 = "3.15.3", an exact version)
+   ├─ @prisma/client@7.10.0  → @tsms/database (dependencies)
+   └─ @tsms/database (devDependencies)
+```
+
+All three arrive through `packages/database`: `prisma@7.10.0` pins `mysql2` to `3.15.3` and
+`@prisma/config@7.10.0` pins `deepmerge-ts` to `7.1.5`, both as exact versions, so resolution could not be
+influenced from the workspace. Scoped `overrides` in `pnpm-workspace.yaml` are the established remedy in this
+repository (see the existing `xcode>uuid` override).
+
+**Vulnerability summaries.** `deepmerge-ts` before 8.0.0 has no cycle detection in its recursive record merging, so
+two self-referencing objects merged at the same property path recurse until `RangeError: Maximum call stack size
+exceeded` (CVE-2026-40345, CWE-674, CVSS 8.2). `mysql2` before 3.22.0 accepts a rogue-server `AuthSwitchRequest`
+to `mysql_clear_password` and returns the password in plaintext without verifying TLS is active (CWE-522,
+CVSS 8.2). GHSA-rgwj-5xj2-c3m3 is a separate `mysql2` finding fixed in 3.23.1.
+
+**Compatibility assessment for the deepmerge-ts major bump (7 → 8).** `@prisma/config` imports exactly one symbol
+from this package: `const { deepmerge } = await import("deepmerge-ts")`, used as c12's config merger
+(`@prisma/config/dist/index.js:621` and `:644`). deepmerge-ts 8.0.0's documented breaking changes are: Map values
+are now deep-merged by default; `DeepMergeMetaMetaData` renamed to `DeepMergeMergeInfo` (deprecated alias kept);
+`DeepMergeIntoFunctionUtils` renamed to `DeepMergeIntoUtils`; and `deepmergeInto` no longer leak-mutates its input.
+None of those apply to the `deepmerge(a, b, ...)` call c12 makes over plain configuration objects, and the
+`deepmerge` signature is unchanged. 8.x additionally adds the circular-reference handling that is the fix.
+
+**Verification performed after the overrides.** `prisma validate`, `prisma generate`, `prisma format --check`,
+`prisma migrate status`, `prisma migrate deploy` against the disposable test database, `pnpm install
+--frozen-lockfile`, the full `pnpm check` suite, `pnpm test:integration`, `pnpm smoke`, `pnpm mobile:check`, and
+`pnpm mobile:export` all pass. `pnpm audit --audit-level=high` returns to exactly the Stage 0 baseline of two high
+findings with `Patched versions: None`. `pnpm why -r` confirms a single resolved version of each package.
+
+**Proof that no vulnerable version remains installed through another path.** An advisory must not be called
+remediated while a vulnerable copy is still present, so this was checked three independent ways at closure:
+
+1. `pnpm why -r` reports exactly one version of each: `deepmerge-ts@8.0.2` and `mysql2@3.24.5`.
+2. `pnpm-lock.yaml` contains no reference to `deepmerge-ts@7.1.5` or `mysql2@3.15.3`; its snapshots list only
+   `deepmerge-ts@8.0.2` and `mysql2@3.24.5`.
+3. A symlink walk of every `node_modules` directory in the workspace found **zero** references to the pre-override
+   virtual-store directories. Two orphaned copies (`deepmerge-ts@7.1.5`, `mysql2@3.15.3`) had been left on disk by
+   an earlier install; they were linked from no workspace package and were removed, after which
+   `pnpm install --frozen-lockfile` and the audit were re-verified.
+
+By contrast, `node-forge@1.4.0` and `braces@3.0.3` are genuinely installed and reachable, which is why their
+dispositions remain OPEN and unresolved.
+
+**Not done, deliberately:** no third-party source was patched, no fork was adopted, and no advisory was suppressed.
+The overrides select published, patched upstream releases.
+
+### Override scope, narrowed at closure (2026-10-07)
+
+Stage 1 applied these as **global** overrides (`deepmerge-ts: 8.0.2`, `mysql2: 3.24.5`). The closure review narrowed
+both to their introducing parent:
+
+```yaml
+overrides:
+  '@prisma/config>deepmerge-ts': 8.0.2
+  'prisma>mysql2': 3.24.5
+```
+
+Rationale: each package enters the graph only through the one Prisma parent, so a parent-scoped override has the
+same effect today while guaranteeing that a future unrelated consumer of `deepmerge-ts` or `mysql2` is **not**
+silently upgraded. Resolution, `pnpm why`, the Prisma CLI, the full test suite, integration tests, mobile
+validation, and the audit were all re-verified after narrowing, with identical results.
+
+**When to remove each override:** as soon as its Prisma parent ships an already-patched version -
+`@prisma/config` pinning `deepmerge-ts >= 8.0.0`, and `prisma` pinning `mysql2 >= 3.23.1`. Do not upgrade Prisma
+solely to clean these up; the current secure versions work and the audit is clear.
+
+**Re-evaluation triggers:** `prisma`, `@prisma/client`, `@prisma/config`, or `@prisma/adapter-pg` is upgraded or
+downgraded; either override is edited or removed; Prisma adds datasource support for something TSMS actually
+uses, which would change the `mysql2` reachability assessment; or `pnpm audit` reports either advisory again.
+
+**Residual risk.** Both overrides still sit ahead of Prisma's own exact pins. If a future Prisma release depends on
+behaviour introduced in `deepmerge-ts` 7.x or `mysql2` 3.15.x, the override could mask that. Revisit on every
+Prisma upgrade.
+
+**Review triggers for these two entries.** `prisma`, `@prisma/client`, `@prisma/adapter-pg`, or `@prisma/config`
+is upgraded **or downgraded**; the `deepmerge-ts` or `mysql2` overrides are removed or changed; Prisma begins
+supporting a datasource TSMS actually uses, which would change the reachability assessment of `mysql2`; or
+`pnpm audit` reports either advisory again.
 
 ## Audit policy
 
@@ -67,10 +176,30 @@ The following policy is in force and is not modified by the owner acceptance abo
    summarise reviewed exceptions, but it must never hide the raw `pnpm audit` output or convert a new
    finding into a pass.
 
-No such mechanism was built during Stage 0 closure. Nothing in the existing Stage 0 tooling supports it
-cleanly today: the only security gate is the single unconditional `pnpm audit --audit-level=high` step in
-`.github/workflows/ci.yml`, which correctly fails and should continue to do so. Adding exception
-machinery would change CI behaviour and belongs in its own authorised task.
+No such mechanism was built during Stage 0 closure or Stage 1 closure. Nothing in the existing Stage 0
+tooling supports it cleanly today. `.github/workflows/ci.yml` runs the raw audit as its own step in a
+dedicated `security-audit` job.
+
+### Why the audit lives in a separate CI job
+
+`pnpm audit --audit-level=high` exits non-zero because of the two owner-accepted advisories above, and it
+will keep doing so until upstream publishes a patch. Keeping that step in the functional `validate` job
+would make every red run ambiguous: it would be impossible to tell a real regression from the known gate.
+
+The audit therefore runs in a separate `security-audit` job. **This is a distinction, not a suppression:**
+
+- the command is unchanged: `pnpm audit --audit-level=high`
+- there is no `continue-on-error`, no `|| true`, and no advisory ignore list
+- the threshold is unchanged
+- no severity is downgraded and no advisory is excluded
+- the step still fails, its job is still red, and the workflow overall is still red
+
+What the split buys is attribution: a failure in `validate` is a functional regression, and a failure in
+`security-audit` is the known security-policy gate. Neither can hide the other.
+
+An operator who wants a red workflow to mean "something is genuinely wrong" must treat the `security-audit`
+failure as a known, accepted, and still-tracked condition until upstream ships a fix or the owner changes the
+disposition.
 
 ---
 

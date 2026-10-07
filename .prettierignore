@@ -8,3 +8,6 @@ coverage
 pnpm-lock.yaml
 **/next-env.d.ts
 artifacts
+# Prisma Client output is machine-generated and must not be reformatted, or
+# `pnpm format:check` will fail after every `prisma generate`.
+packages/database/src/generated

@@ -3,8 +3,7 @@ import { createApplication } from './application.js';
 
 async function bootstrap() {
   const env = parseApiEnvironment(process.env);
-  const app = await createApplication();
-  app.enableShutdownHooks();
+  const app = await createApplication(env);
   await app.listen(env.API_PORT, env.API_HOST);
   console.info(
     JSON.stringify({ event: 'service_started', service: 'tsms-api', port: env.API_PORT }),

@@ -31,3 +31,29 @@ Appropriate legal/privacy review is required before commercial launch, including
 ## Stage 0 limits
 
 Only process liveness endpoints exist. There is no authentication, database, tenant data, file upload, or production deployment. Local development endpoints default to loopback. Dependency review is part of validation; environment examples are deliberately non-secret. Future security work is not represented as complete.
+
+## Stage 1 infrastructure security boundaries
+
+Stage 1 adds PostgreSQL, Redis, and Prisma. It adds no authentication, no tenant data, and no product functionality.
+
+- **Configuration is validated before listening.** `DATABASE_URL` and `REDIS_URL` are required and are checked for
+  URL shape and for the correct protocol. A missing or malformed value fails startup with a non-zero exit code.
+  Validation errors name **keys only** and never echo a supplied value, because these variables carry credentials.
+- **Infrastructure is development-only.** Every credential in `infrastructure/docker-compose.yml` is a throwaway
+  local value, and published ports are bound to loopback. `.env.example` documents them as such. No production
+  secret exists in the repository.
+- **Readiness discloses no internals.** `/ready` reports only whether each dependency is `up` or `down`. Driver
+  error text, connection strings, hostnames, and passwords are never returned, and readiness never logs them.
+  Database and Redis client logging is off by default for the same reason.
+- **Liveness cannot be used to leak dependency state.** `/health` never contacts a dependency.
+- **Destructive test work is guarded in code, not by convention.** Integration tests refuse to open a connection
+  unless the database name ends in `_test` and the host is loopback, and unless the Redis URL selects a non-zero
+  logical database. `pnpm db:test:migrate` applies the same guard, so it cannot be pointed at application data.
+  Rejection messages never include the URL.
+- **Prisma query logging is off by default**, so a failure cannot write connection details to stdout.
+- **`CREATE EXTENSION` privileges are called out.** Local Compose uses a superuser role; staging and production
+  migration roles need the privilege explicitly, and the pgvector migration documents that.
+
+Still absent and still required before launch: authentication, authorization, tenant isolation, audit logging,
+secret management, TLS termination, rate and payload limits, backups, and restore verification. Stage 1 does not
+move any of these closer to done.

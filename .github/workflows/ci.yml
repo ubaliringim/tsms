@@ -1,4 +1,4 @@
-name: Stage 0 validation
+name: Stage 1 validation
 
 on:
   push:
@@ -13,15 +13,28 @@ concurrency:
   group: validation-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+  EXPO_NO_TELEMETRY: '1'
+  TURBO_TELEMETRY_DISABLED: '1'
+  # Disposable infrastructure endpoints for an ephemeral GitHub Actions runner.
+  # These deliberately match the documented local-development values in
+  # infrastructure/docker-compose.yml so that CI exercises the same real
+  # credentials a developer uses. They are throwaway and valid nowhere else, and
+  # they are not secrets. No production credential is required by this workflow.
+  DATABASE_URL: postgresql://tsms:tsms_local_development@127.0.0.1:5432/tsms
+  REDIS_URL: redis://:tsms_local_redis@127.0.0.1:6379
+  # The safety guards in packages/database and packages/redis require the
+  # database name to end in _test, a loopback host, and a non-zero Redis logical
+  # database. These values satisfy exactly that and nothing more.
+  TEST_DATABASE_URL: postgresql://tsms:tsms_local_development@127.0.0.1:5432/tsms_test
+  TEST_REDIS_URL: redis://:tsms_local_redis@127.0.0.1:6379/1
+
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CI: 'true'
-      NEXT_TELEMETRY_DISABLED: '1'
-      EXPO_NO_TELEMETRY: '1'
-      TURBO_TELEMETRY_DISABLED: '1'
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -32,9 +45,63 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # Prisma Client is generated into packages/database/src/generated, which is
+      # gitignored. packages/database's build and typecheck scripts run
+      # `prisma generate` first, so a fresh checkout builds. This explicit step
+      # surfaces generation problems here rather than inside the build.
+      - run: pnpm db:generate
+
+      # Docker Compose is used rather than job `services:` so that CI validates
+      # the same compose file developers use. `migrate deploy` creates the test
+      # database if it is missing, and the integration command applies migrations
+      # before running, so no separate provisioning step is needed.
+      - run: pnpm infra:up
+
+      # Unit tests are Docker-free by design and must stay runnable without
+      # infrastructure. They are part of `pnpm check`.
       - run: pnpm check
+
+      # Integration tests run explicitly, against the Compose services.
+      - run: pnpm test:integration
+
       - run: pnpm mobile:check
       - run: pnpm mobile:export
       - run: pnpm smoke
-      - run: pnpm audit --audit-level=high
+
+      # Stop the services so the job leaves no containers running.
+      - if: always()
+        run: pnpm infra:down
+
       - run: git diff --exit-code
+
+  # Deliberately a separate job from `validate`.
+  #
+  # `pnpm audit --audit-level=high` currently exits non-zero because of two
+  # owner-accepted but unresolved high-severity advisories (node-forge
+  # GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm). Neither has an upstream
+  # patch, so this job fails on every run until upstream state changes. That is
+  # the correct, intended signal and is NOT suppressed.
+  #
+  # Keeping it separate means a failure here is unambiguously the known
+  # security-policy gate rather than a functional regression in the `validate`
+  # job. The overall workflow still reports red. There is no continue-on-error,
+  # no advisory ignore list, no threshold reduction, and no severity downgrade.
+  #
+  # See docs/security/DEPENDENCY_RISK_REGISTER.md for the accepted dispositions
+  # and their review triggers.
+  security-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Dependency security audit (expected to fail on accepted advisories)
+        run: pnpm audit --audit-level=high

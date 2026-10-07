@@ -3,7 +3,7 @@ import { createHealthServer } from './health.js';
 
 function bootstrap() {
   const env = parseWorkerEnvironment(process.env);
-  const server = createHealthServer();
+  const server = createHealthServer(env.DATABASE_URL, env.REDIS_URL);
   server.on('error', (error) => {
     console.error(JSON.stringify({ event: 'worker_error', message: error.message }));
     process.exitCode = 1;
@@ -18,6 +18,7 @@ function bootstrap() {
     );
   });
   const shutdown = () => {
+    // The health server releases its database and Redis connections while closing.
     server.close();
   };
   process.once('SIGINT', shutdown);

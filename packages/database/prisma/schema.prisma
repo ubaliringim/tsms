@@ -1,0 +1,50 @@
+// TSMS database schema.
+//
+// Stage 1 status: this schema is intentionally almost empty. It proves that the
+// migration lifecycle, client generation, application connectivity, and the test
+// harness all work, without committing to any TSMS business concept. The domain
+// groups listed in docs/architecture/DATABASE.md arrive with their own approved
+// stages and tests.
+//
+// Shared database + shared schema + tenant-scoped records remains the accepted
+// strategy (ADR-002). Tenant scoping is expressed as a `tenantId` column on
+// school-owned tables once Stage 3 introduces tenants, together with tenant-aware
+// composite unique constraints and foreign keys. Nothing in this file blocks that:
+// no table here uses a global-only primary key scheme or a database-per-tenant
+// assumption.
+
+generator client {
+  provider               = "prisma-client"
+  // Prisma 7 generates plain TypeScript into the package instead of into
+  // node_modules, so this package compiles it with its own tsc build and the
+  // emitted JavaScript is what applications import.
+  output                 = "../src/generated/prisma"
+  // `importFileExtension = "js"` keeps generated imports in the `./file.js`
+  // form that NodeNext both understands and can resolve at runtime. The `ts`
+  // form is only for running generated TypeScript directly under tsx, which
+  // this repository does not do.
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Infrastructure connectivity probe.
+///
+/// This is deliberately NOT a business concept. It exists so that Stage 1 can
+/// prove end to end that migrations are applied, the generated client can read
+/// and write through the typed query layer, and integration tests can verify a
+/// real query round trip. It carries no tenant, school, or student meaning.
+///
+/// Reminder: replace or drop this when the first real domain model lands.
+model InfrastructureProbe {
+  id        Int      @id @default(autoincrement())
+  label     String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("infrastructure_probes")
+}

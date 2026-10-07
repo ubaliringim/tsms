@@ -4,32 +4,180 @@
   "company": "TeamStack Technologies LTD",
   "updatedAt": "2026-10-07",
   "phase": "foundation",
-  "stage": "0",
-  "stageName": "Engineering Foundation",
+  "stage": "1",
+  "stageName": "Database & Local Infrastructure",
   "stageStatus": "accepted",
-  "stageAcceptedAt": "2026-10-07",
-  "task": "0.1",
+  "implementationAuthorized": false,
+  "previousStage": {
+    "stage": "0",
+    "name": "Engineering Foundation",
+    "status": "accepted",
+    "acceptedAt": "2026-10-07",
+    "record": "tasks/completed/stage-0-engineering-foundation.md"
+  },
+  "task": "1.1",
   "status": "accepted",
   "reviewStatus": "accepted",
   "nextTask": null,
   "nextPlannedStage": {
-    "stage": "1",
-    "name": "Database & Local Infrastructure",
-    "implementationAuthorized": false
+    "stage": "2",
+    "name": "Authentication & Identity",
+    "implementationAuthorized": false,
+    "note": "Next planned stage. Not started: no authentication code, no authentication dependencies, and no user/account/session models exist."
   },
   "blocked": false,
   "blockers": [],
-  "standingRisks": [
+  "baselineCommit": "ebb3111",
+  "infrastructure": {
+    "compose": "infrastructure/docker-compose.yml",
+    "postgres": {
+      "image": "pgvector/pgvector:0.8.7-pg17",
+      "version": "17.11",
+      "pgvector": "0.8.7",
+      "port": 5432,
+      "volume": "tsms-postgres-data",
+      "pgvectorEnabledByMigration": true
+    },
+    "redis": {
+      "image": "redis:8.8.3-alpine",
+      "version": "8.8.3",
+      "port": 6379,
+      "volume": "tsms-redis-data"
+    },
+    "databases": ["tsms", "tsms_test"],
+    "credentialsAreDevelopmentOnly": true,
+    "portsBoundToLoopback": true
+  },
+  "database": {
+    "package": "@tsms/database",
+    "prismaVersion": "7.10.0",
+    "adapter": "@prisma/adapter-pg@7.10.0 with pg@8.23.1",
+    "driverAdapterRequired": true,
+    "generator": "prisma-client",
+    "generatedOutput": "packages/database/src/generated/prisma (gitignored)",
+    "schema": "packages/database/prisma/schema.prisma",
+    "migrationsPath": "packages/database/prisma/migrations",
+    "models": [
+      {
+        "name": "InfrastructureProbe",
+        "table": "infrastructure_probes",
+        "purpose": "infrastructure lifecycle probe only",
+        "businessMeaning": false,
+        "plannedRemoval": "replace or drop when the first real domain model lands"
+      }
+    ],
+    "migrations": ["20261007121807_init_infrastructure_probe", "20261007121808_enable_pgvector"],
+    "commands": {
+      "generate": "pnpm db:generate",
+      "devMigrate": "pnpm db:migrate",
+      "productionDeploy": "pnpm db:deploy",
+      "status": "pnpm db:status",
+      "reset": "pnpm db:reset",
+      "testMigrate": "pnpm db:test:migrate"
+    },
+    "productionUsesDeployOnly": true,
+    "clientLifecycle": "one client per process; explicit shutdown; lazy driver connect; logging off by default; explicit connectionTimeoutMillis",
+    "pooler": "none; Prisma 7 delegates to pg. Production pooler deferred to a later stage"
+  },
+  "redis": {
+    "package": "@tsms/redis",
+    "client": "ioredis@5.11.1",
+    "scope": "connectivity, lifecycle, readiness only",
+    "cachingImplemented": false,
+    "bullmqImplemented": false,
+    "deferredReason": "No stage has a job or cache requirement yet. A BullMQ worker also requires maxRetriesPerRequest=null, which this stage deliberately does not set."
+  },
+  "deferred": [
+    "BullMQ queues",
+    "Redis caching and rate limiting",
+    "S3-compatible object storage",
+    "Row-Level Security",
+    "production connection pooler",
+    "vector indexes and embeddings",
+    "multi-file Prisma schema"
+  ],
+  "securityDisposition": [
     {
-      "type": "dependency_security",
-      "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
-      "details": "Two high-severity transitive advisories, both with no patched upstream release. The owner accepted temporary dispositions on 2026-10-07 based on documented non-reachability. Both remain installed, both vulnerable code paths remain present on disk, and neither is resolved or remediated. pnpm audit --audit-level=high still exits non-zero and is still reported as FAIL. Re-review if any review trigger in the register fires.",
+      "advisory": "GHSA-86w9-cpqp-85rv",
+      "package": "node-forge@1.4.0",
+      "cve": "CVE-2026-85393",
+      "severity": "high",
+      "patchedUpstream": false,
+      "packageStillInstalled": true,
       "ownerDecision": "accepted",
       "ownerDecisionAt": "2026-10-07",
       "disposition": "open_temporarily_accepted_with_documented_non_reachability",
-      "remediated": false,
       "resolved": false,
-      "riskRegister": "docs/security/DEPENDENCY_RISK_REGISTER.md"
+      "remediated": false
+    },
+    {
+      "advisory": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces@3.0.3",
+      "cve": "CVE-2026-93687",
+      "severity": "high",
+      "patchedUpstream": false,
+      "packageStillInstalled": true,
+      "ownerDecision": "accepted",
+      "ownerDecisionAt": "2026-10-07",
+      "disposition": "open_temporarily_accepted_with_documented_non_reachability",
+      "resolved": false,
+      "remediated": false
+    }
+  ],
+  "remediatedStage1Advisories": [
+    {
+      "advisory": "GHSA-ggr8-5vv4-36mx",
+      "package": "deepmerge-ts",
+      "introducedBy": "prisma@7.10.0 via @prisma/config",
+      "was": "7.1.5",
+      "now": "8.0.2",
+      "method": "scoped pnpm override to a patched upstream release",
+      "resolved": true,
+      "override": "'@prisma/config>deepmerge-ts': 8.0.2",
+      "overrideScope": "parent-scoped",
+      "vulnerableVersionStillInstalled": false,
+      "proof": [
+        "pnpm why -r resolves deepmerge-ts@8.0.2 and mysql2@3.24.5 only",
+        "pnpm-lock.yaml contains no reference to deepmerge-ts@7.1.5 or mysql2@3.15.3",
+        "the pnpm virtual store contains no copy of the pre-override versions"
+      ],
+      "reconfirmedAtAcceptance": true
+    },
+    {
+      "advisory": "GHSA-3f6p-5ww8-9rcr",
+      "package": "mysql2",
+      "introducedBy": "prisma@7.10.0",
+      "was": "3.15.3",
+      "now": "3.24.5",
+      "method": "scoped pnpm override to a patched upstream release",
+      "resolved": true,
+      "override": "'prisma>mysql2': 3.24.5",
+      "overrideScope": "parent-scoped",
+      "vulnerableVersionStillInstalled": false,
+      "proof": [
+        "pnpm why -r resolves deepmerge-ts@8.0.2 and mysql2@3.24.5 only",
+        "pnpm-lock.yaml contains no reference to deepmerge-ts@7.1.5 or mysql2@3.15.3",
+        "the pnpm virtual store contains no copy of the pre-override versions"
+      ],
+      "reconfirmedAtAcceptance": true
+    },
+    {
+      "advisory": "GHSA-rgwj-5xj2-c3m3",
+      "package": "mysql2",
+      "introducedBy": "prisma@7.10.0",
+      "was": "3.15.3",
+      "now": "3.24.5",
+      "method": "scoped pnpm override to a patched upstream release",
+      "resolved": true,
+      "override": "'prisma>mysql2': 3.24.5",
+      "overrideScope": "parent-scoped",
+      "vulnerableVersionStillInstalled": false,
+      "proof": [
+        "pnpm why -r resolves deepmerge-ts@8.0.2 and mysql2@3.24.5 only",
+        "pnpm-lock.yaml contains no reference to deepmerge-ts@7.1.5 or mysql2@3.15.3",
+        "the pnpm virtual store contains no copy of the pre-override versions"
+      ],
+      "reconfirmedAtAcceptance": true
     }
   ],
   "auditPolicy": {
@@ -39,47 +187,11 @@
     "suppressionApplied": false,
     "thresholdLowered": false,
     "broadIgnoreRules": false,
+    "exceptionFrameworkIntroduced": false,
     "newUnreviewedHighFindingsAcceptable": false,
-    "futureTask": "Implement a controlled mechanism distinguishing reviewed temporary exceptions from new vulnerabilities, without hiding the raw audit result. Not built during Stage 0 closure."
+    "ciBehavior": "The raw audit runs as its own security-audit job in CI so a functional regression and the known security-policy gate are separately attributable. That job still fails, so the workflow reports red.",
+    "futureTask": "A controlled mechanism distinguishing reviewed temporary exceptions from new vulnerabilities, without hiding the raw audit result. Still not built."
   },
-  "securityDisposition": [
-    {
-      "advisory": "GHSA-86w9-cpqp-85rv",
-      "package": "node-forge@1.4.0",
-      "cve": "CVE-2026-85393",
-      "severity": "high",
-      "cvss": 8.7,
-      "cwe": "CWE-347",
-      "patchedUpstream": false,
-      "packageStillInstalled": true,
-      "introducedBy": "@tsms/student-mobile (expo)",
-      "runtimeClass": "mobile bundling/build tooling; absent from all deployed runtimes and from the exported mobile bundle",
-      "vulnerableFunction": "node-forge lib/rsa.js key.verify() default RSASSA-PKCS1-V1_5 scheme",
-      "attackerInputReachable": false,
-      "ownerDecision": "accepted",
-      "ownerDecisionAt": "2026-10-07",
-      "disposition": "open_temporarily_accepted_with_documented_non_reachability",
-      "resolved": false
-    },
-    {
-      "advisory": "GHSA-vfj7-8cjw-p6xm",
-      "package": "braces@3.0.3",
-      "cve": "CVE-2026-93687",
-      "severity": "high",
-      "cvss": 8.7,
-      "cwe": "CWE-674",
-      "patchedUpstream": false,
-      "packageStillInstalled": true,
-      "introducedBy": "tsms root devDependencies (eslint-config-next) and @tsms/student-mobile (expo, react-native)",
-      "runtimeClass": "lint tooling and mobile bundling tooling; absent from all deployed runtimes and from the exported mobile bundle",
-      "vulnerableFunction": "braces lib/compile.js and lib/expand.js recursive AST walkers without depth guards",
-      "attackerInputReachable": false,
-      "ownerDecision": "accepted",
-      "ownerDecisionAt": "2026-10-07",
-      "disposition": "open_temporarily_accepted_with_documented_non_reachability",
-      "resolved": false
-    }
-  ],
   "validation": {
     "frozenInstall": "pass",
     "format": "pass",
@@ -87,35 +199,130 @@
     "lint": "pass",
     "typecheck": "pass",
     "test": "pass",
-    "testCount": 15,
+    "testCount": 47,
+    "dockerFreeUnitTests": true,
     "build": "pass",
     "check": "pass",
-    "mobileCompatibility": "pass",
-    "androidJavaScriptExport": "pass",
-    "smoke": "pass_with_observed_transient_failure",
-    "smokeNote": "First run in the analysis session failed the api fail-fast assertion at scripts/smoke.mjs:62 (child still running at the fixed 10s deadline at scripts/smoke.mjs:60, exitCode null instead of 1). Direct and isolated spawn/poll reproductions behaved correctly and exited 1 in about one second. Four subsequent full smoke runs passed all six assertions. Most likely Windows first-exec latency; root cause not conclusively determined. Implementation deliberately not changed. Hosted Linux CI has not validated this behaviour.",
+    "integrationTests": "pass_17_cases_requiring_docker",
+    "smoke": "pass_16_assertions",
+    "smokeWithInfrastructureStopped": "pass",
+    "prismaValidate": "pass",
+    "prismaGenerate": "pass",
+    "prismaMigrateStatus": "pass",
+    "prismaDeployToFreshDatabase": "pass_idempotent",
+    "volumePersistence": "pass",
+    "pgvectorAvailability": "pass_extension_present_zero_vector_columns",
     "diffCheck": "pass",
-    "targetedSecretScan": "no_matches",
-    "dependencyAudit": "fail_2_high_no_patched_release",
-    "deploymentArtifactScan": "pass_no_vulnerable_code_in_any_artifact",
+    "dependencyAudit": "fail_2_high_no_patched_release_unchanged_from_stage_0",
+    "mobileCompatibility": "pass_revalidated_at_closure",
+    "mobileExport": "pass_revalidated_at_closure_bundle_hash_identical_to_stage_0",
     "hostedCI": "not_run",
-    "nativeDeviceBuild": "not_run"
+    "nativeDeviceBuild": "not_run",
+    "prismaFormatCheck": "pass",
+    "freshCheckoutForcedNoCacheBuild": "pass",
+    "freshInfrastructureState": "pass_reset_then_up_then_integration",
+    "ciWorkflow": "updated_for_stage_1_not_yet_executed_on_hosted_runner"
   },
   "knownIssues": [
-    "Two open high-severity dependency advisories with owner-accepted temporary dispositions; unresolved and tracked.",
-    "pnpm smoke timing fragility on Windows caused by a fixed 10-second deadline in scripts/smoke.mjs.",
-    "Hosted Linux GitHub Actions workflow has not run.",
+    "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
+    "Two scoped dependency overrides remain ahead of Prisma's upstream exact pins ('@prisma/config>deepmerge-ts': 8.0.2 and 'prisma>mysql2': 3.24.5); drop each once its parent ships an already-patched pin.",
+    "DATABASE_URL and REDIS_URL are now required infrastructure configuration; any script or CI job omitting them fails fast.",
+    "Hosted Linux GitHub Actions has never run against the Stage 1 commit; workflows are reviewed and locally mirrored only.",
     "Native Android/iOS device and store builds have not run.",
+    "Integration testing has so far been performed on Windows with Docker Desktop; Linux-container behaviour and non-amd64 images were not exercised.",
+    "The Compose PostgreSQL image is pinned to the PostgreSQL major through the available pgvector/pgvector:0.8.7-pg17 tag rather than to a patch release.",
+    "Redis AOF is disabled in local development; revisit with any stage that needs Redis durability.",
+    "Local Compose PostgreSQL credentials and privileges are development-only and must never be copied to staging or production.",
+    "No controlled security-audit exception mechanism exists yet; deferred to a future security-policy task.",
+    "InfrastructureProbe is temporary infrastructure scaffolding and should be replaced or removed when genuine domain schema arrives, using a new forward migration rather than by rewriting accepted migration history.",
+    "pnpm mobile:check and pnpm mobile:export were re-validated at closure and pass; the exported bundle hash is identical to Stage 0.",
     "ESLint 9.39.5 is upstream-deprecated and retained for peer compatibility with the React lint chain."
   ],
-  "workingTree": "80 uncommitted files, intent-to-add; no commits and no remote. artifacts/ is gitignored scratch evidence. A Stage 0 baseline commit is proposed but not created.",
-  "nextAction": "Create the Stage 0 baseline commit once authorized. Then await explicit Stage 1 authorization; do not begin Stage 1 implementation until granted. Continue tracking the two accepted advisory dispositions and apply upstream fixes when published.",
+  "workingTree": "The complete accepted Stage 1 working tree is uncommitted and left for owner review. git log shows only the Stage 0 baseline commit ebb3111. The repository .env used for local verification is gitignored. No commit was created during Stage 1 acceptance.",
+  "nextAction": "Create the Stage 1 baseline commit when authorized, then await explicit Stage 2 authorization. Continue tracking the two unresolved Stage 0 advisories and revisit the two scoped overrides on the next Prisma upgrade.",
   "doNot": [
-    "Start Stage 1 without explicit owner authorization",
-    "Implement product functionality",
+    "Start Stage 2 without explicit owner authorization",
+    "Install authentication dependencies or create authentication/user/session code before Stage 2 is authorized",
+    "Implement product or domain functionality",
     "Suppress audit failures or weaken security controls",
-    "Mark the accepted advisories resolved while the packages remain installed",
-    "Accept or revoke a risk disposition without the project owner",
+    "Mark the accepted Stage 0 advisories resolved while the packages remain installed",
+    "Broaden the dependency overrides",
+    "Introduce a security-exception framework without its own authorized task",
+    "Rewrite accepted migration history",
+    "Run pnpm db:reset or pnpm infra:reset against anything but local development",
     "Deploy to production"
-  ]
+  ],
+  "closureValidation": {
+    "date": "2026-10-07",
+    "defectsFoundAndFixed": [
+      {
+        "id": "fresh-checkout-build",
+        "summary": "packages/database build failed on a clean checkout because prisma generate was not part of its build; src/generated is gitignored",
+        "fix": "build and typecheck scripts now run prisma generate first",
+        "verifiedBy": "turbo run build/typecheck/test --force with src/generated absent"
+      },
+      {
+        "id": "infra-up-exit-code",
+        "summary": "pnpm infra:up returned exit 1 because docker compose up --wait treats the one-shot postgres-test-init service as a failure, despite both services being healthy",
+        "fix": "init service removed; prisma migrate deploy already creates the test database and db:test:migrate routes through the safety guard",
+        "verifiedBy": "pnpm infra:reset, then infra:up exit 0, then test:integration exit 0"
+      }
+    ],
+    "overridesNarrowed": true,
+    "ciWorkflowUpdated": true,
+    "auditJobIsSeparateAndStillFails": true,
+    "auditSuppressionApplied": false,
+    "infrastructureProbeReviewed": "kept; no tenant or business semantics; no references from apps/api, apps/worker, packages/config, or scripts",
+    "smokeScriptReviewed": "Stage 0 liveness assertions retained unchanged; added readiness and fail-fast assertions do not weaken them; 10s to 30s deadline cannot hide a persistent failure because the assertion is still exitCode === 1",
+    "mobileRegression": "none; exported bundle content hash identical to Stage 0",
+    "freshStateScope": "only TSMS-owned volumes and containers were manipulated; 18 unrelated host volumes untouched; no system prune"
+  },
+  "stageAcceptedAt": "2026-10-07",
+  "acceptedBy": "Project owner",
+  "previousStages": [
+    {
+      "stage": "0",
+      "name": "Engineering Foundation",
+      "status": "accepted",
+      "acceptedAt": "2026-10-07",
+      "record": "tasks/completed/stage-0-engineering-foundation.md"
+    },
+    {
+      "stage": "1",
+      "name": "Database & Local Infrastructure",
+      "status": "accepted",
+      "acceptedAt": "2026-10-07",
+      "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
+    }
+  ],
+  "activeTask": null,
+  "acceptedCapabilities": [
+    "PostgreSQL local infrastructure",
+    "Redis local infrastructure",
+    "pgvector extension foundation",
+    "Prisma 7 database foundation",
+    "@tsms/database",
+    "@tsms/redis",
+    "migration workflow",
+    "database and Redis lifecycle handling",
+    "API and worker liveness and readiness",
+    "integration-test infrastructure",
+    "test-database safety controls",
+    "Docker Compose workflow",
+    "fresh-state reproducibility",
+    "Stage 1 CI workflow changes",
+    "Prisma dependency security remediations",
+    "temporary InfrastructureProbe scaffolding",
+    "smoke-test readiness extensions"
+  ],
+  "acceptance": {
+    "stage": "1",
+    "name": "Database & Local Infrastructure",
+    "acceptedBy": "Project owner",
+    "acceptanceDate": "2026-10-07",
+    "knownIssuesAcceptedAsNonBlocking": true,
+    "knownIssuesRemainOpen": true,
+    "securityDispositionsChanged": false,
+    "note": "Acceptance does not resolve any dependency advisory. The two Stage 0 advisories remain installed and unresolved, and pnpm audit --audit-level=high remains failing."
+  }
 }

@@ -1,6 +1,6 @@
 # TSMS engineering roadmap
 
-These are controlled milestones, not promises of separate deployments. Each stage needs bounded tasks and explicit acceptance criteria before implementation. Stage 0 (Engineering Foundation) was accepted on 2026-10-07. Stage 1 (Database & Local Infrastructure) is the next planned stage, but implementation authorization has NOT been granted and no Stage 1 task is active.
+These are controlled milestones, not promises of separate deployments. Each stage needs bounded tasks and explicit acceptance criteria before implementation. Stage 0 (Engineering Foundation) was accepted on 2026-10-07. Stage 1 (Database & Local Infrastructure) was accepted on 2026-10-07. Stage 2 (Authentication & Identity) is the next planned stage, but implementation authorization has NOT been granted, no Stage 2 task is active, and no authentication code, dependencies, or models exist.
 
 | Stage | Scope                             |
 | ----- | --------------------------------- |
@@ -28,6 +28,6 @@ These are controlled milestones, not promises of separate deployments. Each stag
 
 ## Stage gates and dependencies
 
-Stage 0 was reviewed and accepted by the owner before Stage 1 starts; that gate is now closed. Security and tenant-aware design apply throughout, not only in Stage 20. Identity must accommodate membership before later tenancy/RBAC milestones. Content generation needs provider boundaries and teacher approval in Stages 9-10, before the dedicated tutoring milestone. Stage 20 consolidates production controls, recovery, operational readiness, and launch validation.
+Stage 0 was reviewed and accepted by the owner before Stage 1 started; that gate is now closed. Stage 1 was reviewed and accepted before Stage 2 starts; that gate is now closed too. Security and tenant-aware design apply throughout, not only in Stage 20. Identity must accommodate membership before later tenancy/RBAC milestones. Content generation needs provider boundaries and teacher approval in Stages 9-10, before the dedicated tutoring milestone. Stage 20 consolidates production controls, recovery, operational readiness, and launch validation.
 
 Future stages require their own task breakdown, schemas/contracts, permission rules, validation commands, and handoff. Do not infer implementation authorization from this roadmap.
