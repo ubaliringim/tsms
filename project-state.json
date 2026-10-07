@@ -27,7 +27,7 @@
   },
   "blocked": false,
   "blockers": [],
-  "baselineCommit": "ebb3111",
+  "baselineCommit": "635536b",
   "infrastructure": {
     "compose": "infrastructure/docker-compose.yml",
     "postgres": {
@@ -216,18 +216,18 @@
     "dependencyAudit": "fail_2_high_no_patched_release_unchanged_from_stage_0",
     "mobileCompatibility": "pass_revalidated_at_closure",
     "mobileExport": "pass_revalidated_at_closure_bundle_hash_identical_to_stage_0",
-    "hostedCI": "not_run",
+    "hostedCI": "failed_at_635536b_integration_environment_filtered_by_turbo",
     "nativeDeviceBuild": "not_run",
     "prismaFormatCheck": "pass",
     "freshCheckoutForcedNoCacheBuild": "pass",
     "freshInfrastructureState": "pass_reset_then_up_then_integration",
-    "ciWorkflow": "updated_for_stage_1_not_yet_executed_on_hosted_runner"
+    "ciWorkflow": "explicit_test_urls_already_present_repair_in_turbo_task_env_hosted_rerun_pending"
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
     "Two scoped dependency overrides remain ahead of Prisma's upstream exact pins ('@prisma/config>deepmerge-ts': 8.0.2 and 'prisma>mysql2': 3.24.5); drop each once its parent ships an already-patched pin.",
     "DATABASE_URL and REDIS_URL are now required infrastructure configuration; any script or CI job omitting them fails fast.",
-    "Hosted Linux GitHub Actions has never run against the Stage 1 commit; workflows are reviewed and locally mirrored only.",
+    "Hosted Linux GitHub Actions failed at 635536b because Turbo filtered the test URLs; local repair validation is recorded in tasks/CURRENT.md. Hosted re-run required after owner push.",
     "Native Android/iOS device and store builds have not run.",
     "Integration testing has so far been performed on Windows with Docker Desktop; Linux-container behaviour and non-amd64 images were not exercised.",
     "The Compose PostgreSQL image is pinned to the PostgreSQL major through the available pgvector/pgvector:0.8.7-pg17 tag rather than to a patch release.",
@@ -236,10 +236,12 @@
     "No controlled security-audit exception mechanism exists yet; deferred to a future security-policy task.",
     "InfrastructureProbe is temporary infrastructure scaffolding and should be replaced or removed when genuine domain schema arrives, using a new forward migration rather than by rewriting accepted migration history.",
     "pnpm mobile:check and pnpm mobile:export were re-validated at closure and pass; the exported bundle hash is identical to Stage 0.",
-    "ESLint 9.39.5 is upstream-deprecated and retained for peer compatibility with the React lint chain."
+    "ESLint 9.39.5 is upstream-deprecated and retained for peer compatibility with the React lint chain.",
+    "checkout@v4, setup-node@v4, and pnpm/action-setup@v4 declare node20; GitHub runs actions on Node 24. Action upgrades deferred to a separately validated follow-up.",
+    "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up."
   ],
-  "workingTree": "The complete accepted Stage 1 working tree is uncommitted and left for owner review. git log shows only the Stage 0 baseline commit ebb3111. The repository .env used for local verification is gitignored. No commit was created during Stage 1 acceptance.",
-  "nextAction": "Create the Stage 1 baseline commit when authorized, then await explicit Stage 2 authorization. Continue tracking the two unresolved Stage 0 advisories and revisit the two scoped overrides on the next Prisma upgrade.",
+  "workingTree": "Started clean at accepted commit 635536b. Only turbo.json, PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md changed for this repair; unstaged and uncommitted for owner review. Local artifacts and .env remain gitignored. No commit or push performed.",
+  "nextAction": "Owner reviews, commits, pushes, and observes the new hosted GitHub Actions run. Validate should pass; raw security-audit remains failing on the two-high baseline. Do not start Stage 2.",
   "doNot": [
     "Start Stage 2 without explicit owner authorization",
     "Install authentication dependencies or create authentication/user/session code before Stage 2 is authorized",
@@ -295,7 +297,7 @@
       "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
     }
   ],
-  "activeTask": null,
+  "activeTask": "Stage 1 post-acceptance hosted CI repair",
   "acceptedCapabilities": [
     "PostgreSQL local infrastructure",
     "Redis local infrastructure",
@@ -324,5 +326,97 @@
     "knownIssuesRemainOpen": true,
     "securityDispositionsChanged": false,
     "note": "Acceptance does not resolve any dependency advisory. The two Stage 0 advisories remain installed and unresolved, and pnpm audit --audit-level=high remains failing."
+  },
+  "postAcceptanceCIRepair": {
+    "date": "2026-10-07",
+    "baselineCommit": "635536b",
+    "stageAcceptanceUnchanged": true,
+    "status": "locally_validated_awaiting_owner_review_and_hosted_rerun",
+    "rootCause": "Workflow test URLs were valid and available to migration outside Turbo. Turbo default strict environment filtering removed TEST_DATABASE_URL and TEST_REDIS_URL from integration task processes because neither was declared. Local .env reload masked the defect.",
+    "reproducedBeforeEditing": "With .env absent and explicit workflow URLs, test migration succeeded, then Redis Vitest setup failed with the identical missing-key error; 8 tests skipped and Turbo stopped.",
+    "fix": "turbo.json tasks.test:integration.env explicitly lists TEST_DATABASE_URL and TEST_REDIS_URL",
+    "unchanged": [
+      "CI workflow and raw audit command",
+      "application configuration validation",
+      "test safety guards",
+      "application/test URL separation",
+      "accepted migrations",
+      "dependencies and lockfile",
+      "Stage 1 acceptance archive"
+    ],
+    "environment": "Windows, Node 24.16.0, pnpm 12.3.4, TSMS Compose services; explicit workflow URLs, .env temporarily hidden, TURBO_FORCE=true",
+    "validationRecord": "tasks/CURRENT.md",
+    "hostedRerunRequired": true,
+    "committed": false,
+    "pushed": false,
+    "validation": [
+      {
+        "command": "pnpm install --frozen-lockfile",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm db:generate",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm infra:up",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm format:check",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm lint",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm typecheck",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm test",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm build",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm check",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm test:integration",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm smoke",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm mobile:check",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm mobile:export",
+        "exitCode": 0
+      },
+      {
+        "command": "pnpm audit --audit-level=high",
+        "exitCode": 1
+      }
+    ],
+    "integrationTests": {
+      "passed": 17,
+      "skipped": 0,
+      "migration": "deploy_pass_2_present_none_pending",
+      "redisDatabase": 1
+    },
+    "unitTestsPassed": 47,
+    "smokeAssertionsPassed": 16,
+    "audit": "FAIL_exit_1_exactly_2_high_known_baseline_no_new_advisories",
+    "localEnvRestored": true,
+    "diffCheck": "pass"
   }
 }
