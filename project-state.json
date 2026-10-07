@@ -216,20 +216,19 @@
     "dependencyAudit": "fail_2_high_no_patched_release_unchanged_from_stage_0",
     "mobileCompatibility": "pass_revalidated_at_closure",
     "mobileExport": "pass_revalidated_at_closure_bundle_hash_identical_to_stage_0",
-    "hostedCI": "failed_at_635536b_integration_environment_filtered_by_turbo",
+    "hostedCI": "owner_verified_ceffd2e_validate_pass_security_audit_fail_expected_2_known_high",
     "nativeDeviceBuild": "not_run",
     "prismaFormatCheck": "pass",
     "freshCheckoutForcedNoCacheBuild": "pass",
     "freshInfrastructureState": "pass_reset_then_up_then_integration",
-    "ciWorkflow": "explicit_test_urls_already_present_repair_in_turbo_task_env_hosted_rerun_pending"
+    "ciWorkflow": "explicit_test_urls_passed_through_turbo_task_env_hosted_verification_complete"
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
     "Two scoped dependency overrides remain ahead of Prisma's upstream exact pins ('@prisma/config>deepmerge-ts': 8.0.2 and 'prisma>mysql2': 3.24.5); drop each once its parent ships an already-patched pin.",
     "DATABASE_URL and REDIS_URL are now required infrastructure configuration; any script or CI job omitting them fails fast.",
-    "Hosted Linux GitHub Actions failed at 635536b because Turbo filtered the test URLs; local repair validation is recorded in tasks/CURRENT.md. Hosted re-run required after owner push.",
     "Native Android/iOS device and store builds have not run.",
-    "Integration testing has so far been performed on Windows with Docker Desktop; Linux-container behaviour and non-amd64 images were not exercised.",
+    "Integration testing passed on Windows with Docker Desktop and in owner-verified hosted Linux validation at ceffd2e; non-amd64 images remain unverified.",
     "The Compose PostgreSQL image is pinned to the PostgreSQL major through the available pgvector/pgvector:0.8.7-pg17 tag rather than to a patch release.",
     "Redis AOF is disabled in local development; revisit with any stage that needs Redis durability.",
     "Local Compose PostgreSQL credentials and privileges are development-only and must never be copied to staging or production.",
@@ -240,8 +239,8 @@
     "checkout@v4, setup-node@v4, and pnpm/action-setup@v4 declare node20; GitHub runs actions on Node 24. Action upgrades deferred to a separately validated follow-up.",
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up."
   ],
-  "workingTree": "Started clean at accepted commit 635536b. Only turbo.json, PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md changed for this repair; unstaged and uncommitted for owner review. Local artifacts and .env remain gitignored. No commit or push performed.",
-  "nextAction": "Owner reviews, commits, pushes, and observes the new hosted GitHub Actions run. Validate should pass; raw security-audit remains failing on the two-high baseline. Do not start Stage 2.",
+  "workingTree": "Closure started clean on main at ceffd2e. Only PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md changed for state-only closure; unstaged and uncommitted. No commit or push performed.",
+  "nextAction": "Owner reviews closure documentation and decides whether to commit/push it. No hosted repair verification remains pending. Await explicit Stage 2 authorization; retain security and Actions/runner follow-ups.",
   "doNot": [
     "Start Stage 2 without explicit owner authorization",
     "Install authentication dependencies or create authentication/user/session code before Stage 2 is authorized",
@@ -297,7 +296,7 @@
       "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
     }
   ],
-  "activeTask": "Stage 1 post-acceptance hosted CI repair",
+  "activeTask": "Stage 1 post-acceptance hosted CI repair closure (closed)",
   "acceptedCapabilities": [
     "PostgreSQL local infrastructure",
     "Redis local infrastructure",
@@ -331,7 +330,7 @@
     "date": "2026-10-07",
     "baselineCommit": "635536b",
     "stageAcceptanceUnchanged": true,
-    "status": "locally_validated_awaiting_owner_review_and_hosted_rerun",
+    "status": "closed_hosted_verification_complete",
     "rootCause": "Workflow test URLs were valid and available to migration outside Turbo. Turbo default strict environment filtering removed TEST_DATABASE_URL and TEST_REDIS_URL from integration task processes because neither was declared. Local .env reload masked the defect.",
     "reproducedBeforeEditing": "With .env absent and explicit workflow URLs, test migration succeeded, then Redis Vitest setup failed with the identical missing-key error; 8 tests skipped and Turbo stopped.",
     "fix": "turbo.json tasks.test:integration.env explicitly lists TEST_DATABASE_URL and TEST_REDIS_URL",
@@ -346,9 +345,9 @@
     ],
     "environment": "Windows, Node 24.16.0, pnpm 12.3.4, TSMS Compose services; explicit workflow URLs, .env temporarily hidden, TURBO_FORCE=true",
     "validationRecord": "tasks/CURRENT.md",
-    "hostedRerunRequired": true,
-    "committed": false,
-    "pushed": false,
+    "hostedRerunRequired": false,
+    "committed": true,
+    "pushed": true,
     "validation": [
       {
         "command": "pnpm install --frozen-lockfile",
@@ -417,6 +416,17 @@
     "smokeAssertionsPassed": 16,
     "audit": "FAIL_exit_1_exactly_2_high_known_baseline_no_new_advisories",
     "localEnvRestored": true,
-    "diffCheck": "pass"
+    "diffCheck": "pass",
+    "repairCommit": "ceffd2e",
+    "hostedVerification": {
+      "date": "2026-10-07",
+      "commit": "ceffd2e",
+      "source": "Project owner verified GitHub Actions results; not independently queried during closure",
+      "runner": "hosted Linux GitHub Actions",
+      "validate": "pass",
+      "securityAudit": "fail_expected",
+      "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
+      "overallWorkflow": "fail_due_to_unsuppressed_security_audit"
+    }
   }
 }

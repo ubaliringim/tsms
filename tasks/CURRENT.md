@@ -1,8 +1,8 @@
-# Current task: Stage 1 post-acceptance hosted CI repair
+# Current task: Stage 1 post-acceptance hosted CI repair closure
 
-Authorized scope: repair the hosted CI failure at accepted commit `635536b`; leave changes uncommitted for owner review.
+Authorized scope: documentation/state-only closure after owner-verified hosted CI at `ceffd2e`; leave changes uncommitted for owner review.
 
-Status: Locally validated; ready for owner review. Hosted re-run required after owner push. Raw audit remains FAIL.
+Status: CLOSED - hosted verification complete at `ceffd2e`. Owner-verified `validate` PASS; `security-audit` FAIL as expected. The overall workflow remains red.
 
 Stage: 1 - Database & Local Infrastructure - **ACCEPTED** (owner decision, 2026-10-07)
 
@@ -42,9 +42,9 @@ These are not tied to a stage and remain open:
 2. **Two scoped dependency overrides** (`'@prisma/config>deepmerge-ts': 8.0.2`, `'prisma>mysql2': 3.24.5`) sit
    ahead of Prisma's exact pins. Drop each once its parent ships an already-patched pin.
 3. **`DATABASE_URL` and `REDIS_URL` are required** by the API and the worker.
-4. **Hosted Linux GitHub Actions ran at `635536b` and exposed an integration setup defect.** The repair below needs a hosted re-run after owner push.
+4. **Hosted Linux verification is complete at `ceffd2e`.** The owner verified `validate` PASS after the Turbo repair; the separate raw audit remains FAIL as expected.
 5. **Native Android/iOS device and store builds have not run.**
-6. **Integration testing has so far run only on Windows with Docker Desktop.**
+6. **Integration testing passed on Windows with Docker Desktop and in hosted Linux validation at `ceffd2e`.** Non-amd64 images remain unverified.
 7. **The Compose PostgreSQL image is pinned to a major version** through the available pgvector tag.
 8. **Redis AOF is disabled in local development.**
 9. **Local Compose PostgreSQL credentials and privileges are development-only** and must never reach staging or
@@ -58,7 +58,7 @@ Full detail for each is in the corresponding completed task record and in
 
 ## Exact next action and handoff
 
-Owner reviews this repair, commits, pushes, and observes the new hosted GitHub Actions run. Stage 1 remains ACCEPTED.
+Owner reviews the uncommitted closure documentation and decides whether to commit/push it. No repair verification remains pending. Stage 1 remains ACCEPTED; await explicit Stage 2 authorization.
 
 ## Post-acceptance CI repair evidence (2026-10-07)
 
@@ -83,7 +83,7 @@ only, with a `_test` database and Redis DB 1. Both guards and configuration vali
 The PostgreSQL guard checks protocol, suffix, and loopback; the existing Redis guard checks protocol and a
 non-zero numeric DB index, not hostname. The explicit CI Redis URL supplies the loopback constraint.
 
-Validation runs on Windows / Node 24.16.0 / pnpm 12.3.4 with TSMS Docker Desktop services, workflow URLs,
+Historical local repair validation ran on Windows / Node 24.16.0 / pnpm 12.3.4 with TSMS Docker Desktop services, workflow URLs,
 `.env` temporarily hidden (restored in `finally`), and `TURBO_FORCE=true` to avoid cached results. Existing
 integration suites provide the behavioral regression check; no constant-only test was added.
 Results are retained in gitignored `artifacts/ci-repair-results.json` and command logs:
@@ -117,8 +117,8 @@ running; no infrastructure reset, volume deletion, or unrelated Docker resources
 The Redis integration suite verified DB 1 is selected and FLUSHDB leaves its DB 0 sentinel intact. Existing
 guard tests verified rejection of the application PostgreSQL database, remote PostgreSQL hosts, invalid
 protocols, and Redis DB 0. Diff review confirms no new secrets, authentication code/dependencies/models,
-audit configuration changes, or accepted migration edits. The full workflow clean-tree check is deferred
-to the hosted run: this repair intentionally remains uncommitted. Git status/log/diffs (including staged
+audit configuration changes, or accepted migration edits. At the local repair handoff, the workflow clean-tree check was deferred
+to hosted validation; that job has now passed at `ceffd2e`, as verified by the owner. Git status/log/diffs (including staged
 diff) and `git show 635536b:.github/workflows/ci.yml` were inspected; no staged changes exist.
 
 Action warnings (separate from the failure): the published metadata for
@@ -134,9 +134,32 @@ Runner warning: `ubuntu-latest` moves from Ubuntu 24.04 to 26.04 between October
 ([official schedule](https://github.blog/changelog/2026-09-17-ubuntu-26-generally-available-and-latest-migration/)).
 Record a follow-up to validate the new image; no runner change is needed to fix environment filtering.
 
-Files changed: `turbo.json`, `PROJECT_STATE.md`, `project-state.json`, and `tasks/CURRENT.md` only.
-The starting tree was clean at `635536b`. No automatic commit or push. Hosted Linux validation of the repair
-is still pending and cannot be inferred from local success. Native device builds are not part of this repair.
+## State-only closure evidence (2026-10-07)
+
+Repair commit `ceffd2e` changed `turbo.json` and the three handoff files above baseline `635536b`.
+The owner verified its hosted Linux GitHub Actions results: `validate` PASS; `security-audit` FAIL - EXPECTED,
+with exactly node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm. This confirms that declaring
+`TEST_DATABASE_URL` and `TEST_REDIS_URL` in `tasks.test:integration.env` fixes the original hosted defect.
+The owner report is the evidence source; no hosted run was independently queried during closure.
+Both advisories remain unresolved and unsuppressed. The Actions runtime and Ubuntu image notices above
+remain separate follow-ups, not repair failures. No repair work or hosted verification remains pending.
+
+Repository inspection: `git status` showed a clean `main` at `ceffd2e`; `git log --oneline -10`,
+`git show --stat ceffd2e`, `git show ceffd2e -- turbo.json`, and unstaged/staged diffs were inspected.
+`git merge-base --is-ancestor ceffd2e HEAD` passed (exit 0); the repair is HEAD. Git emitted a
+non-blocking permission warning for the global ignore file.
+
+Only `PROJECT_STATE.md`, `project-state.json`, and `tasks/CURRENT.md` are changed for closure;
+unstaged and uncommitted. No commit or push performed. No application, dependency, workflow, runner,
+audit-policy, or Turbo configuration changes. Local build, integration, mobile, smoke, and audit commands
+were not rerun for this documentation-only closure; earlier local results above are historical.
+Native device builds remain outside this task.
+
+Closure checks: `pnpm exec prettier --write PROJECT_STATE.md project-state.json tasks/CURRENT.md`,
+`pnpm exec prettier --check PROJECT_STATE.md project-state.json tasks/CURRENT.md`, JSON parsing,
+and `git diff --check` passed. Final diff review confirmed only the three state files changed.
+An initial edit script stopped on a line-ending mismatch after updating only PROJECT_STATE.md;
+the remaining updates were applied after normalizing line endings.
 
 Stage 2 must not begin until the owner grants it. Do not create authentication code, install authentication
 dependencies, or create user/account/session models.
