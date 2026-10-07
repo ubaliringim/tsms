@@ -16,12 +16,13 @@
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
   "task": "2.1",
-  "status": "accepted_locally_pending_hosted_verification",
-  "reviewStatus": "owner_accepted_locally_subject_to_hosted_CI",
+  "status": "closed_hosted_verification_complete",
+  "reviewStatus": "owner_accepted_hosted_verified",
   "nextTask": {
     "id": "2.2",
     "name": "Password Credential Service",
-    "implementationAuthorized": false
+    "implementationAuthorized": false,
+    "status": "not_started"
   },
   "nextPlannedStage": {
     "stage": "3",
@@ -251,7 +252,7 @@
     "prismaSchemaDrift": "pass_empty_diff",
     "dependencyAudit": "fail_exactly_2_known_high_no_new_advisories",
     "diffCheck": "pass",
-    "hostedCI": "not_run_for_uncommitted_stage_2_1",
+    "hostedCI": "validate_pass_security_audit_expected_fail_at_61331fb2c02c3846b92343f50289bbd4e604a1be",
     "nativeDeviceBuild": "not_run",
     "finalInfrastructureStatus": "postgres_and_redis_healthy_loopback_existing_services_preserved"
   },
@@ -272,8 +273,8 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Ten reviewed Stage 2.1/state files prepared for the owner-authorized commit and push. Starting HEAD a4448fa; no application, dependency, or CI changes outside the reviewed scope. Hosted result pending at preparation.",
-  "nextAction": "Commit the ten reviewed files as feat: add authentication identity schema, push main to origin without force, inspect hosted CI, record actual results, then stop. Stage 2.2 remains unauthorized.",
+  "workingTree": "Documentation closure checkpoint contains only PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md. Implementation is committed and pushed at 61331fb2c02c3846b92343f50289bbd4e604a1be. Closure commit/push authorized; verify clean status afterward.",
+  "nextAction": "Hard stop after documentation closure commit and normal push. Stage 2 overall is NOT accepted. Stage 2.2 is NOT STARTED and remains unauthorized; await explicit owner authorization.",
   "doNot": [
     "Start Stage 2.2 or later without explicit owner authorization",
     "Implement authentication behavior, hashing, endpoints, middleware, cookies, UI, tenants, memberships, or RBAC",
@@ -479,12 +480,15 @@
   "currentSubstage": {
     "id": "2.1",
     "name": "Identity Schema & Migration",
-    "status": "accepted_locally_pending_hosted_verification",
+    "status": "closed_hosted_verification_complete",
     "accepted": true,
     "acceptedLocally": true,
     "acceptedBy": "Project owner",
     "acceptedAt": "2026-10-07",
-    "acceptanceScope": "local_only_subject_to_hosted_CI_verification"
+    "acceptanceScope": "owner_accepted_hosted_verified",
+    "hostedVerificationComplete": true,
+    "closed": true,
+    "closedAt": "2026-10-07"
   },
   "authorization": {
     "stage": "2",
@@ -531,7 +535,7 @@
     "tasks/completed/stage-1-hosted-ci-repair.md"
   ],
   "stage21": {
-    "status": "accepted_locally_pending_hosted_verification",
+    "status": "closed_hosted_verification_complete",
     "accepted": true,
     "migration": "20261007210000_identity_schema",
     "acceptedMigrationHistoryUnchanged": true,
@@ -558,11 +562,23 @@
     "acceptedLocally": true,
     "acceptedBy": "Project owner",
     "acceptedAt": "2026-10-07",
-    "acceptanceScope": "local_only_subject_to_hosted_CI_verification",
+    "acceptanceScope": "owner_accepted_hosted_verified",
     "hostedVerification": {
-      "status": "pending",
-      "validate": "pending",
-      "securityAudit": "pending_expected_fail_on_two_known_high"
+      "status": "complete",
+      "commit": "61331fb2c02c3846b92343f50289bbd4e604a1be",
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/37692526719",
+      "runId": 37692526719,
+      "validate": "pass",
+      "securityAudit": "fail_expected_exactly_two_known_high",
+      "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
+      "unitAndToolchainTests": 47,
+      "integrationTests": 43,
+      "newIdentityTests": 26,
+      "smokeAssertions": 16,
+      "otherJobs": [],
+      "nodeRuntimeWarningPresent": true,
+      "ubuntuMigrationNoticePresent": true,
+      "prismaGenerationRaceObserved": false
     },
     "finalBoundaryCheck": {
       "date": "2026-10-07",
@@ -601,6 +617,13 @@
         }
       ],
       "dependencyAudit": "exactly_two_known_high_no_new_advisories"
-    }
+    },
+    "commit": {
+      "sha": "61331fb2c02c3846b92343f50289bbd4e604a1be",
+      "message": "feat: add authentication identity schema",
+      "push": "main_to_origin_success_without_force"
+    },
+    "closed": true,
+    "closedAt": "2026-10-07"
   }
 }

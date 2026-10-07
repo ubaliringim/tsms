@@ -12,7 +12,7 @@ Stage: 2 - Authentication & Identity
 
 Stage status: AUTHORIZED, not accepted. Owner approved Specification v1.0.
 
-Current substage: 2.1 - Identity Schema & Migration (OWNER-ACCEPTED LOCALLY, SUBJECT TO HOSTED CI VERIFICATION). Authorization is limited to 2.1.
+Current substage: 2.1 - Identity Schema & Migration (ACCEPTED / HOSTED VERIFIED / CLOSED). Authorization is limited to 2.1.
 
 Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
@@ -36,12 +36,26 @@ Stage 2.1 implementation: six global identity persistence models, native UUID co
 
 Not implemented: authentication behavior, password hashing, login/logout, sessions/cookies/middleware, token generation or consumption, recovery/email delivery, UI, tenants, memberships, roles, permissions, or other product functionality. No authentication dependencies added.
 
-Version-control handoff: owner authorized committing the ten reviewed Stage 2.1/state files as `feat: add authentication identity schema` and pushing main to origin after all eight boundary checks pass. All eight passed, including a refreshed audit with exactly the two known high advisories. Hosted verification is pending at preparation.
+Version-control handoff: owner authorized committing the ten reviewed Stage 2.1/state files as `feat: add authentication identity schema` and pushing main to origin after all eight boundary checks pass. All eight passed, including a refreshed audit with exactly the two known high advisories. Hosted verification was pending at commit preparation; the completed result is recorded below.
 
-Validation limitation: forced parallel checking exposed concurrent Prisma generation in the existing build/typecheck scripts (EEXIST). The uncached serial check and ordinary default check passed; task configuration is unchanged. Track coordinated generation as a separate tooling follow-up. Hosted Stage 2.1 CI and native device/store builds have not run.
+Validation limitation: forced parallel checking exposed concurrent Prisma generation in the existing build/typecheck scripts (EEXIST). The uncached serial check and ordinary default check passed; task configuration is unchanged. Track coordinated generation as a separate tooling follow-up. Hosted Stage 2.1 validate passed; native device/store builds have not run.
 
-Exact next action: create the authorized commit, push main without force, inspect hosted CI, record actual results, then stop. Stage 2.1 is owner-accepted locally subject to hosted verification. Stage 2 is not accepted; Stage 2.2 is NOT authorized. Retain the unresolved advisory, scoped override, Actions runtime, and Ubuntu runner follow-ups.
+Exact next action: hard stop after this documentation closure commit and normal push. Stage 2.2 is NOT STARTED and remains unauthorized; await explicit owner authorization.
 
 DO NOT: start Stage 2.2 or later, implement authentication behavior or tenant/RBAC functionality, install authentication dependencies, suppress or weaken audit controls, mark accepted advisories resolved, rewrite accepted migrations, amend accepted commits, force push, or deploy.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
+
+## Completed hosted verification - 2026-10-07
+
+Commit `61331fb2c02c3846b92343f50289bbd4e604a1be` (`feat: add authentication identity schema`) was pushed successfully from main to origin without force. All eight final boundary checks passed before commit; exactly the ten reviewed files were committed. Accepted migrations and pnpm-lock.yaml remain unchanged.
+
+[GitHub Actions run 37692526719](https://github.com/ubaliringim/tsms/actions/runs/37692526719) completed for that exact commit. `validate` PASS: 47 unit/toolchain tests, 43 integration tests (35 database including 26 new identity tests, plus 8 Redis), and 16 smoke assertions. Frozen install, Prisma generation, check, mobile dependency check/export, and clean tracked-file verification passed. All three migrations applied on hosted Ubuntu 24.04.
+
+`security-audit` FAIL EXPECTED: exactly two high advisories, node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm. No new high advisory or suppression. There are no other jobs. The overall workflow is red solely because of this accepted audit baseline. Both the Actions Node 20-to-24 runtime warning and Ubuntu 24.04-to-26.04 migration notice still appear and remain follow-ups. Concurrent Prisma generation EEXIST was not observed on this run; the existing tooling follow-up remains open. All prior documented follow-ups and security dispositions remain unchanged.
+
+Evidence: gh run watch completed with exit 1 for the expected audit failure; gh run view JSON and logs confirmed both jobs and test counts. Local ignored evidence is in artifacts/stage21/hosted-result.json and hosted-run.log. The working tree was clean immediately after push, with local HEAD and origin/main both at the commit above. The owner subsequently authorized this documentation closure checkpoint, limited to PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md, with commit subject `docs: close Stage 2.1 hosted validation` and a normal push. No implementation changes or amendment are authorized.
+
+Stage 1 remains ACCEPTED. Stage 2.1 is OWNER ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 as a whole is NOT accepted. Stage 2.2 has NOT started and remains unauthorized. No deployment, tenant membership, or RBAC work occurred. **Do not start Stage 2.2 without explicit owner authorization.**
+
+Owner closure decision (2026-10-07): Stage 2.1 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 1 remains ACCEPTED; Stage 2 overall remains NOT ACCEPTED. Stage 2.2 is NOT STARTED / UNAUTHORIZED. Closure scope is only these three state files; all known follow-ups remain open. Validate formatting, JSON state consistency and preserved follow-ups, the exact three-file diff, and `git diff --check` before committing. Verify branch synchronization and clean status after the normal push.

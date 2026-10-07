@@ -4,7 +4,7 @@ Owner: TeamStack Technologies LTD
 
 Stage 2: AUTHORIZED; Authentication & Identity Specification v1.0 owner approved.
 Implementation authorization: **2.1 only**. Stage 2 is NOT accepted.
-Status: **OWNER-ACCEPTED LOCALLY, SUBJECT TO HOSTED CI VERIFICATION**.
+Status: **ACCEPTED / HOSTED VERIFIED / CLOSED**.
 Owner decision recorded on 2026-10-07. Stage 2 as a whole remains NOT accepted.
 Stage 1 remains **ACCEPTED** (2026-10-07).
 Stage 2.2 - Password Credential Service: **NOT AUTHORIZED**.
@@ -61,7 +61,7 @@ except that migration-state verification now expects the new third migration. Ei
 ## Validation and outcomes
 
 Windows / Node 24.16.0 / pnpm 12.3.4, existing TSMS Docker Compose services. Local command logs and
-machine-readable results are in gitignored artifacts/stage21. No hosted Stage 2.1 run was claimed.
+machine-readable results are in gitignored artifacts/stage21. These are the historical local results; completed hosted results are recorded below.
 
 | Command/check                                                | Actual outcome                                                                                                                                          |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -110,7 +110,7 @@ were already healthy before work and remain running.
   required a network-enabled tool run after sandbox named-pipe access was denied; both services were healthy.
 - Git reported a non-blocking permission warning for its global ignore file. Optional process inspection
   through Get-CimInstance was denied; validation command exits/logs supplied the required evidence.
-- Native device/store builds, non-amd64 images, and hosted CI for these uncommitted changes were not run.
+- Native device/store builds and non-amd64 images were not run. Hosted verification is recorded below.
 
 ## Security review
 
@@ -154,13 +154,27 @@ behavior/endpoints/middleware/registration/JWT/membership/RBAC; unchanged pnpm-l
 findings and no new advisories. Schema, SQL, tests, and all changed/new files were reviewed.
 
 At commit preparation the seven modified and three new files are the complete reviewed scope. Generated
-output and local evidence remain gitignored. Hosted verification is pending; no hosted success is inferred
-from the local checks. After the authorized commit and push, inspect the actual run and record each job.
+output and local evidence remain gitignored. Hosted verification was pending at preparation; completed results are recorded below.
 
-Exact next action: commit, push main without force, inspect hosted CI, update the handoff with actual
-results, then stop. Stage 1 remains ACCEPTED. Stage 2.1 is owner-accepted locally. Stage 2 is NOT accepted.
+Exact next action: hard stop after this documentation closure commit and normal push. Stage 1 remains ACCEPTED. Stage 2.1 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 is NOT accepted.
 Stage 2.2 has NOT started and remains NOT authorized. No tenant or RBAC functionality exists.
 
 **DO NOT start Stage 2.2 without explicit owner authorization.** No later authentication behavior,
 dependencies, endpoints, middleware, UI, tenant/RBAC work, audit weakening, accepted migration rewrites,
 amendment of accepted commits, force push, or deployment.
+
+## Completed hosted verification - 2026-10-07
+
+Commit `61331fb2c02c3846b92343f50289bbd4e604a1be` (`feat: add authentication identity schema`) was pushed successfully from main to origin without force. All eight final boundary checks passed before commit; exactly the ten reviewed files were committed. Accepted migrations and pnpm-lock.yaml remain unchanged.
+
+[GitHub Actions run 37692526719](https://github.com/ubaliringim/tsms/actions/runs/37692526719) completed for that exact commit. `validate` PASS: 47 unit/toolchain tests, 43 integration tests (35 database including 26 new identity tests, plus 8 Redis), and 16 smoke assertions. Frozen install, Prisma generation, check, mobile dependency check/export, and clean tracked-file verification passed. All three migrations applied on hosted Ubuntu 24.04.
+
+`security-audit` FAIL EXPECTED: exactly two high advisories, node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm. No new high advisory or suppression. There are no other jobs. The overall workflow is red solely because of this accepted audit baseline. Both the Actions Node 20-to-24 runtime warning and Ubuntu 24.04-to-26.04 migration notice still appear and remain follow-ups. Concurrent Prisma generation EEXIST was not observed on this run; the existing tooling follow-up remains open. All prior documented follow-ups and security dispositions remain unchanged.
+
+Evidence: gh run watch completed with exit 1 for the expected audit failure; gh run view JSON and logs confirmed both jobs and test counts. Local ignored evidence is in artifacts/stage21/hosted-result.json and hosted-run.log. The working tree was clean immediately after push, with local HEAD and origin/main both at the commit above. The owner subsequently authorized this documentation closure checkpoint, limited to PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md, with commit subject `docs: close Stage 2.1 hosted validation` and a normal push. No implementation changes or amendment are authorized.
+
+Stage 1 remains ACCEPTED. Stage 2.1 is OWNER ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 as a whole is NOT accepted. Stage 2.2 has NOT started and remains unauthorized. No deployment, tenant membership, or RBAC work occurred. **Do not start Stage 2.2 without explicit owner authorization.**
+
+Owner closure decision (2026-10-07): Stage 2.1 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 1 remains ACCEPTED; Stage 2 overall remains NOT ACCEPTED. Stage 2.2 is NOT STARTED / UNAUTHORIZED. Closure scope is only these three state files; all known follow-ups remain open. Validate formatting, JSON state consistency and preserved follow-ups, the exact three-file diff, and `git diff --check` before committing. Verify branch synchronization and clean status after the normal push.
+
+Documentation closure validation: pnpm format:check PASS; JSON state consistency and exact three-file scope assertions PASS; prior knownIssues, security dispositions, scoped overrides, audit policy, and Stage 1 records unchanged; git diff --check PASS. No application regression suite was rerun for this documentation-only checkpoint.
