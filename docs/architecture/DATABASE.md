@@ -1,6 +1,6 @@
 # Database and domain model direction
 
-Status: Stage 1 implements the database machinery. **The TSMS domain model is still conceptual.**
+Status: Stage 1 database machinery is accepted. Stage 2.1 adds global identity persistence only; see the Stage 2.1 section below. All other domain groups remain conceptual.
 
 ## Sources of truth
 
@@ -19,7 +19,7 @@ PostgreSQL owns structured business truth. Object storage owns files. Learning e
 | Engagement/reporting | xp_transactions, student_streaks, achievement_definitions, student_achievements, learning_events, analytics aggregates, notifications |
 | Operations           | tenant_branding, tenant_domains, tenant_features, plans, subscriptions, usage counters, audit_logs                                    |
 
-None of these exist yet. Each arrives with its own approved stage, migration, and isolation tests.
+Only global users and their authentication persistence primitives arrive in Stage 2.1. Other records arrive with their own approved stage, migration, and isolation tests.
 
 ## Invariants
 
@@ -42,7 +42,7 @@ Stage 1 establishes local infrastructure and migration tooling. Identity/tenancy
 
 ---
 
-# Stage 1 implementation
+# Stage 1 implementation (historical accepted baseline)
 
 ## Selected versions
 
@@ -268,3 +268,70 @@ re-verified afterwards.
 
 The two Stage 0 advisories (node-forge, braces) remain installed and unresolved under their owner-accepted
 temporary dispositions. See `docs/security/DEPENDENCY_RISK_REGISTER.md`.
+
+## Stage 2.1 - global identity persistence
+
+Owner authorization is limited to identity schema and migration. No login, password hashing, session
+validation, token generation/consumption, provisioning, event recording, or tenant/RBAC behavior exists.
+
+The new forward migration is `20261007210000_identity_schema`. It adds six tables and two enums, with
+no data deletion or modification of the two accepted Stage 1 migrations. InfrastructureProbe remains:
+its existing independent client/transaction regression tests still use it. This deliberately defers the
+historical removal plan above; a future forward migration must replace that coverage before removing it.
+
+### IDs, naming, and timestamps
+
+Tables use snake_case mappings; columns keep the existing Prisma camelCase convention. Every new model
+uses a native PostgreSQL UUID primary key with `@default(uuid(7))`. The baseline had no production ID
+policy beyond an integer test probe; UUIDv7 implements the owner's UUID-style identity requirement.
+Prisma generates these IDs, not PostgreSQL: direct SQL writers must provide a UUID. See the
+[Prisma v7 schema reference](https://www.prisma.io/docs/orm/v7/reference/prisma-schema-reference#uuid).
+
+Dates retain Stage 1's DateTime / TIMESTAMP(3) convention and represent UTC instants. `createdAt` and
+`occurredAt` default to database current time. User and credential `updatedAt` are maintained by Prisma;
+direct SQL writers must supply/update them. No database update trigger or timezone policy change is added.
+
+### Models and constraints
+
+| Model                  | Purpose and invariants                                                                                                                                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User                   | Global identity; required presentation email, unique normalizedEmail, displayName; ACTIVE/DISABLED only; nullable emailVerifiedAt. No school, membership, role, or permission attributes.                                                          |
+| PasswordCredential     | Required passwordHash text, unique userId (at most one per identity), passwordChangedAt and creation/update times. Users may exist without a credential. No hashing implementation, algorithm dependency, plaintext, or reversible password field. |
+| Session                | Required unique tokenHash and owner; required expiry; nullable lastSeenAt/revokedAt. No raw bearer token.                                                                                                                                          |
+| PasswordResetToken     | Required unique tokenHash, owner, expiry; nullable usedAt for later single-use enforcement.                                                                                                                                                        |
+| EmailVerificationToken | Required unique tokenHash, owner, expiry; nullable usedAt. No delivery or consumption behavior.                                                                                                                                                    |
+| AuthenticationEvent    | Nullable userId for unknown identities, constrained event enum, occurredAt and optional requestId. No arbitrary metadata column.                                                                                                                   |
+
+Normalized email uniqueness is enforced in PostgreSQL. Normalization itself remains future writer behavior:
+trim surrounding whitespace and lowercase, retaining presentation email. No provider-specific transformations,
+normalization service, or public registration. The database does not transform or validate email syntax.
+Hash columns deliberately do not pin an encoding or password algorithm before Stage 2.2. Their names and
+contracts require hashes; a TEXT column cannot prove a value is a digest. No production writer exists yet.
+
+### Foreign keys and lifecycle
+
+All five user foreign keys explicitly use ON DELETE RESTRICT and ON UPDATE RESTRICT. This prevents an
+accidental user deletion or ID reassignment from destroying credentials, sessions, recovery records, or known
+security-event attribution. Nullable event ownership is for genuinely unknown identities, not automatic
+anonymization on deletion. ACTIVE/DISABLED is persistence support only; account disabling is not implemented.
+
+These constraints are not a complete retention framework or immutable audit store: privileged explicit
+child deletion remains possible, and a user with no dependents can be deleted. Retention, approved erasure,
+and event-writer permissions require later authorization. Tests clean up only their own synthetic rows,
+explicitly deleting children before parents. No cascade or broad truncate is needed.
+
+### Index rationale
+
+- Unique normalizedEmail supports global identity lookup and duplicate prevention.
+- Unique PasswordCredential.userId enforces one credential and covers owner lookup without another index.
+- Unique tokenHash on each token-bearing table supports direct digest lookup and duplicate prevention.
+- Each token-bearing table has userId for owner lookup/invalidation and expiresAt for expiry lookup/cleanup.
+- AuthenticationEvent has (userId, occurredAt) for a user's chronological security history; its leading
+  column also supports foreign-key checks. No metadata, status, or speculative global event indexes.
+
+### Security-event metadata boundary
+
+Only the nine approved event concepts are in AuthenticationEventType. Optional JSON metadata is omitted
+until a bounded sanitized security-metadata contract exists. Future code must never persist passwords,
+raw tokens, Authorization/Cookie headers, or request bodies. requestId is only a correlation identifier;
+its validation belongs to the future event writer. This task adds no event-recording behavior.

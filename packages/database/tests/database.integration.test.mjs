@@ -34,6 +34,7 @@ describe('database integration against a real PostgreSQL instance', () => {
     expect(names).toEqual([
       '20261007121807_init_infrastructure_probe',
       '20261007121808_enable_pgvector',
+      '20261007210000_identity_schema',
     ]);
   });
 

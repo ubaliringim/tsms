@@ -1,6 +1,6 @@
 # TSMS engineering roadmap
 
-These are controlled milestones, not promises of separate deployments. Each stage needs bounded tasks and explicit acceptance criteria before implementation. Stage 0 (Engineering Foundation) was accepted on 2026-10-07. Stage 1 (Database & Local Infrastructure) was accepted on 2026-10-07. Stage 2 (Authentication & Identity) is the next planned stage, but implementation authorization has NOT been granted, no Stage 2 task is active, and no authentication code, dependencies, or models exist.
+These are controlled milestones, not promises of separate deployments. Each stage needs bounded tasks and explicit acceptance criteria before implementation. Stage 0 (Engineering Foundation) was accepted on 2026-10-07. Stage 1 (Database & Local Infrastructure) was accepted on 2026-10-07. Stage 2 (Authentication & Identity) Specification v1.0 is owner approved. Implementation is authorized ONLY for Stage 2.1 (Identity Schema & Migration), owner-accepted locally subject to hosted CI verification. Stage 2 is not accepted. Stage 2.2 (Password Credential Service) and all later work require separate authorization.
 
 | Stage | Scope                             |
 | ----- | --------------------------------- |

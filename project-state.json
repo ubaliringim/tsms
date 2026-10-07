@@ -4,30 +4,33 @@
   "company": "TeamStack Technologies LTD",
   "updatedAt": "2026-10-07",
   "phase": "foundation",
-  "stage": "1",
-  "stageName": "Database & Local Infrastructure",
-  "stageStatus": "accepted",
-  "implementationAuthorized": false,
+  "stage": "2",
+  "stageName": "Authentication & Identity",
+  "stageStatus": "authorized",
+  "implementationAuthorized": true,
   "previousStage": {
-    "stage": "0",
-    "name": "Engineering Foundation",
+    "stage": "1",
+    "name": "Database & Local Infrastructure",
     "status": "accepted",
     "acceptedAt": "2026-10-07",
-    "record": "tasks/completed/stage-0-engineering-foundation.md"
+    "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
-  "task": "1.1",
-  "status": "accepted",
-  "reviewStatus": "accepted",
-  "nextTask": null,
+  "task": "2.1",
+  "status": "accepted_locally_pending_hosted_verification",
+  "reviewStatus": "owner_accepted_locally_subject_to_hosted_CI",
+  "nextTask": {
+    "id": "2.2",
+    "name": "Password Credential Service",
+    "implementationAuthorized": false
+  },
   "nextPlannedStage": {
-    "stage": "2",
-    "name": "Authentication & Identity",
-    "implementationAuthorized": false,
-    "note": "Next planned stage. Not started: no authentication code, no authentication dependencies, and no user/account/session models exist."
+    "stage": "3",
+    "name": "Multi-Tenancy",
+    "implementationAuthorized": false
   },
   "blocked": false,
   "blockers": [],
-  "baselineCommit": "635536b",
+  "baselineCommit": "a4448fa",
   "infrastructure": {
     "compose": "infrastructure/docker-compose.yml",
     "postgres": {
@@ -61,12 +64,40 @@
       {
         "name": "InfrastructureProbe",
         "table": "infrastructure_probes",
-        "purpose": "infrastructure lifecycle probe only",
+        "purpose": "infrastructure regression tests retained in Stage 2.1",
         "businessMeaning": false,
-        "plannedRemoval": "replace or drop when the first real domain model lands"
+        "plannedRemoval": "future forward migration with replacement of independent foundation tests"
+      },
+      {
+        "name": "User",
+        "purpose": "global identity persistence only; no authentication behavior"
+      },
+      {
+        "name": "PasswordCredential",
+        "purpose": "global identity persistence only; no authentication behavior"
+      },
+      {
+        "name": "Session",
+        "purpose": "global identity persistence only; no authentication behavior"
+      },
+      {
+        "name": "PasswordResetToken",
+        "purpose": "global identity persistence only; no authentication behavior"
+      },
+      {
+        "name": "EmailVerificationToken",
+        "purpose": "global identity persistence only; no authentication behavior"
+      },
+      {
+        "name": "AuthenticationEvent",
+        "purpose": "global identity persistence only; no authentication behavior"
       }
     ],
-    "migrations": ["20261007121807_init_infrastructure_probe", "20261007121808_enable_pgvector"],
+    "migrations": [
+      "20261007121807_init_infrastructure_probe",
+      "20261007121808_enable_pgvector",
+      "20261007210000_identity_schema"
+    ],
     "commands": {
       "generate": "pnpm db:generate",
       "devMigrate": "pnpm db:migrate",
@@ -194,34 +225,35 @@
   },
   "validation": {
     "frozenInstall": "pass",
-    "format": "pass",
+    "prismaGenerate": "pass",
+    "prismaValidate": "pass",
+    "prismaFormatCheck": "pass",
     "formatCheck": "pass",
     "lint": "pass",
     "typecheck": "pass",
     "test": "pass",
     "testCount": 47,
-    "dockerFreeUnitTests": true,
     "build": "pass",
-    "check": "pass",
-    "integrationTests": "pass_17_cases_requiring_docker",
-    "smoke": "pass_16_assertions",
-    "smokeWithInfrastructureStopped": "pass",
-    "prismaValidate": "pass",
-    "prismaGenerate": "pass",
-    "prismaMigrateStatus": "pass",
-    "prismaDeployToFreshDatabase": "pass_idempotent",
-    "volumePersistence": "pass",
-    "pgvectorAvailability": "pass_extension_present_zero_vector_columns",
+    "check": "pass_default_configuration",
+    "forcedSequentialCheck": "pass_TURBO_FORCE_true_TURBO_CONCURRENCY_1",
+    "forcedParallelCheck": "fail_concurrent_prisma_generation_EEXIST_followup_recorded",
+    "integrationTests": "pass",
+    "integrationTestCount": 43,
+    "newIdentityIntegrationTests": 26,
+    "databaseIntegrationTests": 35,
+    "redisIntegrationTests": 8,
+    "skippedIntegrationTests": 0,
+    "smoke": "pass_16_assertions_dependencies_up",
+    "mobileCompatibility": "pass",
+    "mobileExport": "pass_android",
+    "prismaMigrateStatus": "pass_3_applied_none_pending_on_fresh_test_database",
+    "prismaDeployToFreshDatabase": "pass_all_3_migrations_idempotent_redeploy",
+    "prismaSchemaDrift": "pass_empty_diff",
+    "dependencyAudit": "fail_exactly_2_known_high_no_new_advisories",
     "diffCheck": "pass",
-    "dependencyAudit": "fail_2_high_no_patched_release_unchanged_from_stage_0",
-    "mobileCompatibility": "pass_revalidated_at_closure",
-    "mobileExport": "pass_revalidated_at_closure_bundle_hash_identical_to_stage_0",
-    "hostedCI": "owner_verified_ceffd2e_validate_pass_security_audit_fail_expected_2_known_high",
+    "hostedCI": "not_run_for_uncommitted_stage_2_1",
     "nativeDeviceBuild": "not_run",
-    "prismaFormatCheck": "pass",
-    "freshCheckoutForcedNoCacheBuild": "pass",
-    "freshInfrastructureState": "pass_reset_then_up_then_integration",
-    "ciWorkflow": "explicit_test_urls_passed_through_turbo_task_env_hosted_verification_complete"
+    "finalInfrastructureStatus": "postgres_and_redis_healthy_loopback_existing_services_preserved"
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
@@ -233,18 +265,20 @@
     "Redis AOF is disabled in local development; revisit with any stage that needs Redis durability.",
     "Local Compose PostgreSQL credentials and privileges are development-only and must never be copied to staging or production.",
     "No controlled security-audit exception mechanism exists yet; deferred to a future security-policy task.",
-    "InfrastructureProbe is temporary infrastructure scaffolding and should be replaced or removed when genuine domain schema arrives, using a new forward migration rather than by rewriting accepted migration history.",
-    "pnpm mobile:check and pnpm mobile:export were re-validated at closure and pass; the exported bundle hash is identical to Stage 0.",
+    "InfrastructureProbe retained in Stage 2.1 to preserve independent foundation regression coverage; future removal requires a forward migration and replacement tests.",
+    "Mobile dependency check and Android export pass for Stage 2.1; native device/store builds remain unverified.",
     "ESLint 9.39.5 is upstream-deprecated and retained for peer compatibility with the React lint chain.",
     "checkout@v4, setup-node@v4, and pnpm/action-setup@v4 declare node20; GitHub runs actions on Node 24. Action upgrades deferred to a separately validated follow-up.",
-    "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up."
+    "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
+    "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Closure started clean on main at ceffd2e. Only PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md changed for state-only closure; unstaged and uncommitted. No commit or push performed.",
-  "nextAction": "Owner reviews closure documentation and decides whether to commit/push it. No hosted repair verification remains pending. Await explicit Stage 2 authorization; retain security and Actions/runner follow-ups.",
+  "workingTree": "Ten reviewed Stage 2.1/state files prepared for the owner-authorized commit and push. Starting HEAD a4448fa; no application, dependency, or CI changes outside the reviewed scope. Hosted result pending at preparation.",
+  "nextAction": "Commit the ten reviewed files as feat: add authentication identity schema, push main to origin without force, inspect hosted CI, record actual results, then stop. Stage 2.2 remains unauthorized.",
   "doNot": [
-    "Start Stage 2 without explicit owner authorization",
-    "Install authentication dependencies or create authentication/user/session code before Stage 2 is authorized",
-    "Implement product or domain functionality",
+    "Start Stage 2.2 or later without explicit owner authorization",
+    "Implement authentication behavior, hashing, endpoints, middleware, cookies, UI, tenants, memberships, or RBAC",
+    "Install authentication dependencies",
+    "Amend accepted commits, force push, or deploy",
     "Suppress audit failures or weaken security controls",
     "Mark the accepted Stage 0 advisories resolved while the packages remain installed",
     "Broaden the dependency overrides",
@@ -253,33 +287,8 @@
     "Run pnpm db:reset or pnpm infra:reset against anything but local development",
     "Deploy to production"
   ],
-  "closureValidation": {
-    "date": "2026-10-07",
-    "defectsFoundAndFixed": [
-      {
-        "id": "fresh-checkout-build",
-        "summary": "packages/database build failed on a clean checkout because prisma generate was not part of its build; src/generated is gitignored",
-        "fix": "build and typecheck scripts now run prisma generate first",
-        "verifiedBy": "turbo run build/typecheck/test --force with src/generated absent"
-      },
-      {
-        "id": "infra-up-exit-code",
-        "summary": "pnpm infra:up returned exit 1 because docker compose up --wait treats the one-shot postgres-test-init service as a failure, despite both services being healthy",
-        "fix": "init service removed; prisma migrate deploy already creates the test database and db:test:migrate routes through the safety guard",
-        "verifiedBy": "pnpm infra:reset, then infra:up exit 0, then test:integration exit 0"
-      }
-    ],
-    "overridesNarrowed": true,
-    "ciWorkflowUpdated": true,
-    "auditJobIsSeparateAndStillFails": true,
-    "auditSuppressionApplied": false,
-    "infrastructureProbeReviewed": "kept; no tenant or business semantics; no references from apps/api, apps/worker, packages/config, or scripts",
-    "smokeScriptReviewed": "Stage 0 liveness assertions retained unchanged; added readiness and fail-fast assertions do not weaken them; 10s to 30s deadline cannot hide a persistent failure because the assertion is still exitCode === 1",
-    "mobileRegression": "none; exported bundle content hash identical to Stage 0",
-    "freshStateScope": "only TSMS-owned volumes and containers were manipulated; 18 unrelated host volumes untouched; no system prune"
-  },
-  "stageAcceptedAt": "2026-10-07",
-  "acceptedBy": "Project owner",
+  "stageAcceptedAt": null,
+  "acceptedBy": null,
   "previousStages": [
     {
       "stage": "0",
@@ -296,7 +305,7 @@
       "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
     }
   ],
-  "activeTask": "Stage 1 post-acceptance hosted CI repair closure (closed)",
+  "activeTask": "Stage 2.1 - Identity Schema & Migration",
   "acceptedCapabilities": [
     "PostgreSQL local infrastructure",
     "Redis local infrastructure",
@@ -317,14 +326,11 @@
     "smoke-test readiness extensions"
   ],
   "acceptance": {
-    "stage": "1",
-    "name": "Database & Local Infrastructure",
-    "acceptedBy": "Project owner",
-    "acceptanceDate": "2026-10-07",
-    "knownIssuesAcceptedAsNonBlocking": true,
-    "knownIssuesRemainOpen": true,
-    "securityDispositionsChanged": false,
-    "note": "Acceptance does not resolve any dependency advisory. The two Stage 0 advisories remain installed and unresolved, and pnpm audit --audit-level=high remains failing."
+    "stage": "2",
+    "accepted": false,
+    "specification": "Authentication & Identity Specification v1.0",
+    "specificationApprovedBy": "Project owner",
+    "implementationScope": "2.1 Identity Schema & Migration only"
   },
   "postAcceptanceCIRepair": {
     "date": "2026-10-07",
@@ -344,7 +350,7 @@
       "Stage 1 acceptance archive"
     ],
     "environment": "Windows, Node 24.16.0, pnpm 12.3.4, TSMS Compose services; explicit workflow URLs, .env temporarily hidden, TURBO_FORCE=true",
-    "validationRecord": "tasks/CURRENT.md",
+    "validationRecord": "tasks/completed/stage-1-hosted-ci-repair.md",
     "hostedRerunRequired": false,
     "committed": true,
     "pushed": true,
@@ -427,6 +433,174 @@
       "securityAudit": "fail_expected",
       "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
       "overallWorkflow": "fail_due_to_unsuppressed_security_audit"
+    }
+  },
+  "stage1Validation": {
+    "frozenInstall": "pass",
+    "format": "pass",
+    "formatCheck": "pass",
+    "lint": "pass",
+    "typecheck": "pass",
+    "test": "pass",
+    "testCount": 47,
+    "dockerFreeUnitTests": true,
+    "build": "pass",
+    "check": "pass",
+    "integrationTests": "pass_17_cases_requiring_docker",
+    "smoke": "pass_16_assertions",
+    "smokeWithInfrastructureStopped": "pass",
+    "prismaValidate": "pass",
+    "prismaGenerate": "pass",
+    "prismaMigrateStatus": "pass",
+    "prismaDeployToFreshDatabase": "pass_idempotent",
+    "volumePersistence": "pass",
+    "pgvectorAvailability": "pass_extension_present_zero_vector_columns",
+    "diffCheck": "pass",
+    "dependencyAudit": "fail_2_high_no_patched_release_unchanged_from_stage_0",
+    "mobileCompatibility": "pass_revalidated_at_closure",
+    "mobileExport": "pass_revalidated_at_closure_bundle_hash_identical_to_stage_0",
+    "hostedCI": "owner_verified_ceffd2e_validate_pass_security_audit_fail_expected_2_known_high",
+    "nativeDeviceBuild": "not_run",
+    "prismaFormatCheck": "pass",
+    "freshCheckoutForcedNoCacheBuild": "pass",
+    "freshInfrastructureState": "pass_reset_then_up_then_integration",
+    "ciWorkflow": "explicit_test_urls_passed_through_turbo_task_env_hosted_verification_complete"
+  },
+  "stage1Acceptance": {
+    "stage": "1",
+    "name": "Database & Local Infrastructure",
+    "acceptedBy": "Project owner",
+    "acceptanceDate": "2026-10-07",
+    "knownIssuesAcceptedAsNonBlocking": true,
+    "knownIssuesRemainOpen": true,
+    "securityDispositionsChanged": false,
+    "note": "Acceptance does not resolve any dependency advisory. The two Stage 0 advisories remain installed and unresolved, and pnpm audit --audit-level=high remains failing."
+  },
+  "currentSubstage": {
+    "id": "2.1",
+    "name": "Identity Schema & Migration",
+    "status": "accepted_locally_pending_hosted_verification",
+    "accepted": true,
+    "acceptedLocally": true,
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-07",
+    "acceptanceScope": "local_only_subject_to_hosted_CI_verification"
+  },
+  "authorization": {
+    "stage": "2",
+    "specificationVersion": "1.0",
+    "authorizedBy": "Project owner",
+    "scope": "2.1 Identity Schema & Migration only",
+    "laterSubstagesAuthorized": false
+  },
+  "stage1ClosureValidation": {
+    "date": "2026-10-07",
+    "defectsFoundAndFixed": [
+      {
+        "id": "fresh-checkout-build",
+        "summary": "packages/database build failed on a clean checkout because prisma generate was not part of its build; src/generated is gitignored",
+        "fix": "build and typecheck scripts now run prisma generate first",
+        "verifiedBy": "turbo run build/typecheck/test --force with src/generated absent"
+      },
+      {
+        "id": "infra-up-exit-code",
+        "summary": "pnpm infra:up returned exit 1 because docker compose up --wait treats the one-shot postgres-test-init service as a failure, despite both services being healthy",
+        "fix": "init service removed; prisma migrate deploy already creates the test database and db:test:migrate routes through the safety guard",
+        "verifiedBy": "pnpm infra:reset, then infra:up exit 0, then test:integration exit 0"
+      }
+    ],
+    "overridesNarrowed": true,
+    "ciWorkflowUpdated": true,
+    "auditJobIsSeparateAndStillFails": true,
+    "auditSuppressionApplied": false,
+    "infrastructureProbeReviewed": "kept; no tenant or business semantics; no references from apps/api, apps/worker, packages/config, or scripts",
+    "smokeScriptReviewed": "Stage 0 liveness assertions retained unchanged; added readiness and fail-fast assertions do not weaken them; 10s to 30s deadline cannot hide a persistent failure because the assertion is still exitCode === 1",
+    "mobileRegression": "none; exported bundle content hash identical to Stage 0",
+    "freshStateScope": "only TSMS-owned volumes and containers were manipulated; 18 unrelated host volumes untouched; no system prune"
+  },
+  "changedFiles": [
+    "PROJECT_STATE.md",
+    "project-state.json",
+    "tasks/CURRENT.md",
+    "tasks/ROADMAP.md",
+    "docs/architecture/DATABASE.md",
+    "packages/database/prisma/schema.prisma",
+    "packages/database/prisma/migrations/20261007210000_identity_schema/migration.sql",
+    "packages/database/tests/database.integration.test.mjs",
+    "packages/database/tests/identity.integration.test.mjs",
+    "tasks/completed/stage-1-hosted-ci-repair.md"
+  ],
+  "stage21": {
+    "status": "accepted_locally_pending_hosted_verification",
+    "accepted": true,
+    "migration": "20261007210000_identity_schema",
+    "acceptedMigrationHistoryUnchanged": true,
+    "infrastructureProbe": "retained_for_independent_foundation_tests",
+    "identityIndependentOfTenancyAndRBAC": true,
+    "authenticationBehaviorImplemented": false,
+    "dependenciesChanged": false,
+    "eventMetadata": "omitted_pending_sanitized_bounded_contract",
+    "referentialActions": "all_five_User_FKs_onDelete_Restrict_onUpdate_Restrict",
+    "freshValidation": {
+      "database": "tsms_stage21_1791408571535_test",
+      "absentBefore": true,
+      "migrationsApplied": 3,
+      "integrationTestsPassed": 43,
+      "schemaDrift": "none",
+      "idempotentDeploy": "pass",
+      "removedAfterValidation": true
+    },
+    "testSafetyGuardsUnchanged": true,
+    "databaseUrlFallbackAdded": false,
+    "securityReview": "pass",
+    "validationRecord": "tasks/CURRENT.md",
+    "localLogs": "artifacts/stage21 (gitignored)",
+    "acceptedLocally": true,
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-07",
+    "acceptanceScope": "local_only_subject_to_hosted_CI_verification",
+    "hostedVerification": {
+      "status": "pending",
+      "validate": "pending",
+      "securityAudit": "pending_expected_fail_on_two_known_high"
+    },
+    "finalBoundaryCheck": {
+      "date": "2026-10-07",
+      "checks": [
+        {
+          "id": 1,
+          "result": "pass"
+        },
+        {
+          "id": 2,
+          "result": "pass"
+        },
+        {
+          "id": 3,
+          "result": "pass"
+        },
+        {
+          "id": 4,
+          "result": "pass"
+        },
+        {
+          "id": 5,
+          "result": "pass"
+        },
+        {
+          "id": 6,
+          "result": "pass"
+        },
+        {
+          "id": 7,
+          "result": "pass"
+        },
+        {
+          "id": 8,
+          "result": "pass"
+        }
+      ],
+      "dependencyAudit": "exactly_two_known_high_no_new_advisories"
     }
   }
 }
