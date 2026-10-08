@@ -3,7 +3,7 @@
 Owner: TeamStack Technologies LTD
 
 Stage 0 and Stage 1: ACCEPTED. Stages 2.1, 2.2 and 2.3: ACCEPTED / HOSTED VERIFIED / CLOSED.
-Stage 2.4: IN PROGRESS / LOCALLY VALIDATED; NOT ACCEPTED, NOT COMMITTED, NOT PUSHED.
+Stage 2.4: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08).
 Stage 2 overall: NOT ACCEPTED. Stage 2.5 and later: NOT STARTED / UNAUTHORIZED.
 
 ## Starting state
@@ -160,11 +160,112 @@ Not implemented: registration, password reset or recovery, email verification, r
 logout-all, session listing, JWT, any authentication framework, rate limiting, tenant or school
 enrolment, role or permission assignment, and client-side auth state.
 
-## Git status
+## Independent security review
 
-HEAD and origin/main both remain at 6df160a5cdd161793ce43ad0fae34235c999a84f. Nothing is staged,
-committed, or pushed. No deployment occurred.
+Performed before commit by driving the real application against real PostgreSQL, not by re-reading the
+committed tests.
 
-Exact next action: owner reviews the Stage 2.4 implementation, HTTP contract, and security findings.
+**Enumeration resistance.** Compared the complete observable response - status, every header, body -
+across unknown email, wrong password, missing credential, disabled account, and policy-invalid
+passwords on both an existing and an unknown account. All six byte-identical: `401`,
+`{"statusCode":401,"error":"authentication_failed"}`, `Cache-Control: no-store`, `Vary: Origin`, no
+`Set-Cookie`. No session written on any failure path. No password, digest, address, Prisma code or
+stack in any response. The decoy digest is confirmed to execute: a failed login with a policy-valid
+password measured 324 ms against 348 ms for a real successful verification. **Not** a constant-time
+claim.
 
-**HARD STOP: do not commit, push, deploy, or begin Stage 2.5 without explicit owner authorization.**
+**Session security.** Exactly one session per login. Token present only in `Set-Cookie`, absent from
+the body, every other header, and the request URL. PostgreSQL stores only the SHA-256 digest; no
+column contains the raw token. `HttpOnly` and `SameSite=Lax` in both environments; `__Host-` and
+`Secure` in production with no configuration able to disable it; no `Domain`; measured lifetime
+exactly 604800000 ms with cookie `Max-Age` matching. Duplicate cookies fail closed. Logout revokes only
+the presented session, preserves the original revocation timestamp on repeat, leaves the same user's
+other session and other users' sessions valid, and clears the cookie with matching attributes. Revoked,
+expired and disabled sessions all rejected by `GET /auth/me`. Every authentication response including
+errors is `no-store`.
+
+**Origin and CSRF.** All ten disallowed forms rejected with 403: scheme, port and host differences, a
+suffix lookalike, a wildcard, a trailing slash, and four spoofed forwarded/`Host`/`Referer` headers.
+Query-supplied credentials and tokens are ignored: a logout driven by `?token=` does not revoke, and
+`/auth/me` cannot be driven by a query token. No credentialed CORS header is emitted.
+
+**Logging.** No `console`, `Logger`, `stdout` or `stderr` write exists anywhere in the authentication
+path. Nest runs with the logger disabled and the Prisma client keeps logging off.
+
+**Deployment boundary.** Not deployed. The absence of rate limiting is documented as a blocker for
+public internet exposure in docs/security/AUTH_API.md, docs/architecture/SECURITY.md and
+project-state.json. Stage 2.6 was not started.
+
+## Defects found and fixed in this review
+
+1. The recorded unit/toolchain total was wrong. It is **112**, not the 109 recorded previously: the
+   74-test Stage 2.3 baseline plus 38 added by Stage 2.4. The 109 figure omitted three pre-existing
+   API unit tests. No test result changed; only the recorded number was incorrect. Corrected in
+   PROJECT_STATE.md, this file and project-state.json.
+2. Seven integration assertions counted session rows globally, so unrelated residue in the
+   disposable test database failed 27 tests and made an authentication defect indistinguishable from
+   leftover data. Those assertions are now scoped to each test's own fixture users. Re-verified by
+   seeding a foreign user, credential and session, confirming all 66 tests still pass, then removing it.
+
+## Commit, push and hosted verification
+
+The 23 reviewed Stage 2.4 files were committed as `891af278313f68f385dbf6e405f9304347bb82bd` with
+subject `feat: add HTTP authentication endpoints` and pushed normally to main. No amendment, force
+push, or deployment. The baseline `6df160a` remains an ancestor. No dependency, lockfile, schema,
+migration, or accepted-stage document changed.
+
+[Hosted run 37747657210](https://github.com/ubaliringim/tsms/actions/runs/37747657210) completed for
+that exact SHA on hosted Linux.
+
+- `validate` **PASS** (1m35s), every step green: frozen install, Prisma generation, Compose
+  infrastructure, check, integration tests, mobile dependency check, mobile Android export (578
+  modules), smoke, teardown, tracked-file cleanliness. 112 unit/toolchain tests (config 22, database 8,
+  Redis 4, worker 4, API 73 including 37 focused, plus one Node toolchain test), 134 integration tests
+  (35 database, 8 Redis, 91 API including 66 focused), 19 smoke assertions, all three migrations
+  replayed. Hosted counts match local exactly.
+- `security-audit` **EXPECTED FAIL** (25s) on exactly node-forge GHSA-86w9-cpqp-85rv and braces
+  GHSA-vfj7-8cjw-p6xm, both high, both with no patched release. No new advisory, no suppression,
+  threshold unchanged.
+- No other jobs. **The overall workflow is red and is not green.**
+- Annotations repeat the existing follow-ups: Actions Node 20-to-24 forced runtime and the
+  ubuntu-latest to Ubuntu 26 migration notice. Concurrent Prisma generation was not observed on this
+  run; that follow-up remains open.
+
+These hosted-results documentation updates were prepared for owner review and are now accepted.
+
+## Stage 2.4 acceptance and documentation closure
+
+The owner accepted Stage 2.4 and authorized this final documentation closure, limited to
+`PROJECT_STATE.md`, `project-state.json`, and `tasks/CURRENT.md`, with subject
+`docs: close Stage 2.4 hosted validation` and a normal push to main. No amendment, force push, or
+deployment.
+
+Before that commit the working tree was confirmed to hold exactly those three modified documentation
+files: nothing staged, nothing untracked, and no implementation, test, schema, migration, dependency,
+lockfile, configuration, or CI file touched. HEAD and `origin/main` both equalled the accepted
+implementation SHA `891af278313f68f385dbf6e405f9304347bb82bd`.
+
+Acceptance is bounded to global identity authentication as implemented, and resolves no dependency
+advisory. These remain explicitly open:
+
+- No login rate limiting; public internet deployment is prohibited until Stage 2.6.
+- The trusted `Origin` allowlist is not proxy-aware.
+- A session-bound CSRF token for future authenticated mutations is deferred.
+- Rehash-on-login is not implemented.
+- Credentialed CORS for web/control is not implemented, so the contract is same-origin only.
+- `AuthenticationEvent` recording is not implemented.
+- The accepted Stage 2.3 session concurrency limitations remain documented and unchanged.
+- `node-forge` GHSA-86w9-cpqp-85rv and `braces` GHSA-vfj7-8cjw-p6xm remain unresolved, with no
+  patched upstream release.
+
+All previously documented infrastructure, Prisma, native-platform, CI, and dependency follow-ups are
+preserved unchanged.
+
+Final stage statuses: Stage 0 ACCEPTED; Stage 1 ACCEPTED; Stage 2.1 ACCEPTED / HOSTED VERIFIED /
+CLOSED; Stage 2.2 ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2.3 ACCEPTED / HOSTED VERIFIED / CLOSED;
+Stage 2.4 ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2 overall NOT ACCEPTED; Stage 2.5 NOT STARTED /
+UNAUTHORIZED.
+
+Exact next action: hard stop.
+
+**HARD STOP: do not deploy or begin Stage 2.5 without explicit owner authorization.**

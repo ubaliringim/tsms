@@ -40,13 +40,13 @@ Validation limitation: forced parallel checking exposed concurrent Prisma genera
 
 Stage 2.3 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Handoff record: tasks/CURRENT.md. No Stage 2.3 archive file has been created; only the four authorized documentation files changed in that closure.
 
-Stage 2.4 status: IN PROGRESS / LOCALLY VALIDATED. Not accepted, not committed, not pushed, not deployed. Current substage. See tasks/CURRENT.md and docs/security/AUTH_API.md.
+Stage 2.4 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Implementation commit `891af278313f68f385dbf6e405f9304347bb82bd` (`feat: add HTTP authentication endpoints`); hosted run [37747657210](https://github.com/ubaliringim/tsms/actions/runs/37747657210). Record at tasks/CURRENT.md and docs/security/AUTH_API.md.
 
 Next substage: 2.5 - Abuse protection and rate limiting. NOT STARTED / UNAUTHORIZED.
 
-Exact next action: owner reviews the Stage 2.4 implementation, HTTP contract, and security findings. Changes remain uncommitted.
+Exact next action: hard stop. Stage 2.4 documentation closure was the only authorized remaining work.
 
-DO NOT: start Stage 2.5 or later, add registration/reset/refresh/logout-all/rate limiting, add tenant or RBAC behaviour, enable credentialed CORS, change accepted schema/migrations, weaken audits, commit, push, or deploy without explicit authorization.
+DO NOT: start Stage 2.5 or later, add registration/reset/refresh/logout-all/rate limiting, add tenant or RBAC behaviour, enable credentialed CORS, change accepted schema/migrations, weaken audits, amend, force-push, commit, push, or deploy without explicit authorization.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -159,3 +159,104 @@ reach the client; an unreliable adapter-derived 413, replaced with an explicit p
 
 Changes are uncommitted, unstaged, and unpushed. **HARD STOP: Stage 2.5 is NOT STARTED /
 UNAUTHORIZED.**
+
+## Stage 2.4 security review, commit and hosted verification - 2026-10-08
+
+The owner conditionally accepted Stage 2.4 for implementation commit and hosted verification. An
+independent security review was performed before committing, driving the real application against
+real PostgreSQL rather than relying on the committed tests.
+
+Enumeration resistance was verified by comparing the complete observable response - status, every
+header, and body - for unknown email, wrong password, missing credential, disabled account, and
+policy-invalid passwords against both an existing and an unknown account. All six were byte-identical:
+`401` with `{"statusCode":401,"error":"authentication_failed"}`, `Cache-Control: no-store`,
+`Vary: Origin`, no `Set-Cookie`. No session row was written on any failure path, and no password,
+digest, address, Prisma code, or stack reached the client. The committed decoy Argon2id digest was
+confirmed to execute: a failed login with a policy-valid password measured 324 ms against 348 ms for a
+real successful verification. This remains an explicit **non-constant-time** claim.
+
+Session security was verified directly: exactly one session per successful login; the token appears
+only in `Set-Cookie` and is absent from the body, from every other header, and from the request URL;
+PostgreSQL holds only the SHA-256 digest and no column contains the raw token; `HttpOnly` and
+`SameSite=Lax` in both environments with `__Host-` and `Secure` in production and no configuration
+able to disable it; no `Domain`; measured lifetime exactly 604800000 ms with cookie `Max-Age` matching;
+duplicate cookies fail closed; logout revokes only the presented session, preserves the original
+revocation timestamp on repeat, leaves the same user's other session and other users' sessions valid,
+and clears the cookie with matching attributes; revoked, expired and disabled sessions are all
+rejected by `GET /auth/me`; and every authentication response including errors is `no-store`.
+
+Origin enforcement rejected all ten disallowed forms with 403, covering scheme, port and host
+differences, a suffix lookalike, a wildcard, a trailing slash, and four spoofed forwarded, `Host` and
+`Referer` headers. Query-supplied credentials and tokens are ignored: a logout driven by `?token=`
+does not revoke anything, and `/auth/me` cannot be driven by a query token. No credentialed CORS
+header is emitted, and the authentication path contains no `console`, `Logger`, `stdout` or `stderr`
+write at all.
+
+Two defects were corrected during the review, both in test and state bookkeeping rather than product
+behaviour. The recorded unit/toolchain total was wrong: the correct figure is **112**, not the 109
+recorded in the previous checkpoint, because that figure omitted three pre-existing API unit tests. The
+74-test Stage 2.3 baseline plus 38 tests added by Stage 2.4 gives 112. Separately, seven integration
+assertions counted session rows globally, so unrelated residue in the disposable test database failed
+27 tests; those assertions are now scoped to each test's own fixture users and were re-verified by
+seeding a foreign row and confirming the suite still passes. The residue was then removed.
+
+The 23 reviewed Stage 2.4 files were committed as `891af278313f68f385dbf6e405f9304347bb82bd` with
+subject `feat: add HTTP authentication endpoints` and pushed normally. No amendment, force push, or
+deployment. The baseline `6df160a` remains an ancestor. No dependency, lockfile, schema, migration, or
+accepted-stage document changed.
+
+[Hosted run 37747657210](https://github.com/ubaliringim/tsms/actions/runs/37747657210) completed for
+that exact SHA. `validate` **PASS** (1m35s) with every step green: 112 unit/toolchain tests, 134
+integration tests, 19 smoke assertions, all three migrations replayed, mobile dependency check and
+Android export at 578 modules, and tracked-file cleanliness. Hosted counts match local exactly.
+`security-audit` **EXPECTED FAIL** (25s) on exactly node-forge GHSA-86w9-cpqp-85rv and braces
+GHSA-vfj7-8cjw-p6xm, both high, both with no patched release, no new advisory and no suppression. No
+other jobs. **The overall workflow is red and is not green.** The Actions Node 20-to-24 warning and the
+Ubuntu migration notice persist unchanged; concurrent Prisma generation was not observed on this run and
+that follow-up remains open.
+
+Stage 2.4 reached HOSTED VERIFIED / AWAITING FINAL OWNER ACCEPTANCE at this checkpoint; the owner accepted it immediately afterwards. See the final documentation closure section below. Stage 0, Stage 1, Stages 2.1, 2.2 and 2.3 acceptance are untouched. Stage 2 overall remains NOT ACCEPTED. Stage 2.5 remains NOT STARTED / UNAUTHORIZED. No deployment occurred.
+
+## Stage 2.4 final documentation closure - 2026-10-08
+
+The owner accepted Stage 2.4 and authorized committing only PROJECT_STATE.md, project-state.json and
+tasks/CURRENT.md with subject `docs: close Stage 2.4 hosted validation`, then pushing main normally.
+Before that commit the working tree was confirmed to hold exactly those three modified documentation
+files, with nothing staged, nothing untracked, and no implementation, test, schema, migration,
+dependency, lockfile, configuration, or CI file touched. Both HEAD and `origin/main` equalled the
+accepted implementation SHA `891af278313f68f385dbf6e405f9304347bb82bd`.
+
+Recorded hosted results, unchanged from the verification checkpoint: `validate` PASS; 112
+unit/toolchain tests; 134 integration tests; 19 smoke assertions; Prisma migration replay PASS with
+all three accepted migrations applied; mobile dependency check and Android export PASS at 578
+modules; `security-audit` EXPECTED FAIL on exactly the two documented high-severity advisories. The
+overall workflow remains red and is **not** green. Neither advisory is marked resolved.
+
+Acceptance is bounded to global identity authentication as implemented. The following stay explicitly
+open and are not resolved by this acceptance:
+
+- **No login rate limiting.** Password verification is reachable over HTTP without throttling. Public
+  internet deployment is prohibited until Stage 2.6 delivers abuse protection.
+- The trusted `Origin` allowlist is not proxy-aware; a TLS-terminating proxy must preserve the
+  browser-supplied `Origin`.
+- A session-bound CSRF token for future authenticated mutations remains deferred.
+- Rehash-on-login is not implemented; Argon2id parameter evolution remains an explicit follow-up.
+- Credentialed CORS for the web and control applications is not implemented, so that contract is
+  same-origin only.
+- `AuthenticationEvent` recording is not implemented.
+- The accepted Stage 2.3 session concurrency limitations remain documented and unchanged.
+- `node-forge` GHSA-86w9-cpqp-85rv and `braces` GHSA-vfj7-8cjw-p6xm remain **unresolved**, with no
+  patched upstream release.
+
+All previously documented infrastructure, Prisma, native-platform, CI, and dependency follow-ups are
+preserved unchanged: the concurrent Prisma generation EEXIST item, the Actions Node 20-to-24 runtime
+warning, the ubuntu-latest to Ubuntu 26 migration notice, native Android/iOS device and store builds
+not run, non-amd64 image verification, the Compose PostgreSQL major-version tag pin, development-only
+local credentials, the deferred security-audit exception mechanism, InfrastructureProbe retirement
+through a future forward migration, and the Stage 2.2 portability, capacity, and policy-evolution
+reviews.
+
+Stage 0: ACCEPTED. Stage 1: ACCEPTED. Stage 2.1: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.2:
+ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.3: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.4:
+ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall: NOT ACCEPTED. Stage 2.5: NOT STARTED /
+UNAUTHORIZED. **HARD STOP.**

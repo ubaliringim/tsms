@@ -16,8 +16,8 @@
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
   "task": "2.4",
-  "status": "in_progress_locally_validated",
-  "reviewStatus": "awaiting_owner_review",
+  "status": "accepted_hosted_verified_closed",
+  "reviewStatus": "complete",
   "nextTask": {
     "id": "2.5",
     "name": "Abuse protection and rate limiting",
@@ -240,12 +240,13 @@
     "dependencyAudit": "expected_fail_exactly_two_known_high_no_new_findings",
     "diffCheck": "pass",
     "securityReview": "pass_with_one_documentation_correction_and_two_added_tests; no production behaviour change",
-    "hostedCI": "validate_pass_security_audit_expected_fail_at_c75361e85e5315b8eb17646da2825cfd9eea7b91_run_37733953331",
+    "hostedCI": "validate_pass_security_audit_expected_fail_at_891af278313f68f385dbf6e405f9304347bb82bd_run_37747657210",
     "testCount": 74,
     "integrationTestCount": 68,
     "focusedSessionUnitTests": 12,
     "focusedSessionIntegrationTests": 17,
-    "uuidLengthCheckFinding": "The exact 36-character length check in requireId is redundant defence-in-depth, not the mechanism that rejects trailing line terminators. The anchored pattern already rejects \\n, \\r, U+2028 and U+2029 because it ends with the specific class [0-9a-f]{12}. Both checks retained; an earlier claim that the length check rejects a trailing newline was corrected."
+    "uuidLengthCheckFinding": "The exact 36-character length check in requireId is redundant defence-in-depth, not the mechanism that rejects trailing line terminators. The anchored pattern already rejects \\n, \\r, U+2028 and U+2029 because it ends with the specific class [0-9a-f]{12}. Both checks retained; an earlier claim that the length check rejects a trailing newline was corrected.",
+    "stage24Hosted": "validate_pass_112_unit_134_integration_19_smoke_security_audit_expected_fail_run_37747657210"
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
@@ -264,16 +265,18 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Stage 2.4 changes are uncommitted, unstaged, and unpushed, pending owner review. HEAD and origin/main both remain at 6df160a5cdd161793ce43ad0fae34235c999a84f.",
-  "nextAction": "Owner reviews the Stage 2.4 implementation, HTTP contract, and security findings. Stage 2 overall NOT ACCEPTED; Stage 2.5 NOT STARTED / UNAUTHORIZED.",
+  "workingTree": "Stage 2.4 accepted and closed by the project owner. Documentation closure commit docs: close Stage 2.4 hosted validation covers exactly PROJECT_STATE.md, project-state.json and tasks/CURRENT.md.",
+  "nextAction": "Hard stop. Stage 2.4 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall NOT ACCEPTED; Stage 2.5 NOT STARTED / UNAUTHORIZED and requires separate owner authorization.",
   "doNot": [
     "Start Stage 2.5 or later without explicit owner authorization",
-    "Add registration, password reset, refresh tokens, logout-all, or rate limiting",
+    "Expose the API to the public internet before Stage 2.6 rate limiting exists",
+    "Add registration, password reset, refresh tokens, logout-all, or rehash-on-login",
     "Add tenant, school, membership, role, or permission behaviour",
     "Enable credentialed CORS",
     "Modify accepted schema or migrations",
     "Suppress or weaken the dependency audit",
-    "Commit, push, amend, force-push, or deploy"
+    "Mark the overall workflow green or either advisory resolved",
+    "Amend, force-push, or deploy"
   ],
   "stageAcceptedAt": null,
   "acceptedBy": null,
@@ -321,8 +324,8 @@
     "accepted": false,
     "specification": "Authentication & Identity Specification v1.0",
     "specificationApprovedBy": "Project owner",
-    "acceptedSubstages": ["2.1", "2.2", "2.3"],
-    "implementationScope": "2.1, 2.2 and 2.3 accepted; 2.4 in progress; 2.5 and later unauthorized"
+    "acceptedSubstages": ["2.1", "2.2", "2.3", "2.4"],
+    "implementationScope": "2.1, 2.2, 2.3 and 2.4 accepted; 2.5 and later unauthorized"
   },
   "postAcceptanceCIRepair": {
     "date": "2026-10-07",
@@ -471,11 +474,12 @@
   "currentSubstage": {
     "id": "2.4",
     "name": "Login, Current User and Logout API",
-    "status": "in_progress_locally_validated",
-    "accepted": false,
-    "acceptedBy": null,
-    "acceptedAt": null,
-    "hostedVerified": false
+    "status": "accepted_hosted_verified_closed",
+    "accepted": true,
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-08",
+    "acceptedCommit": "891af278313f68f385dbf6e405f9304347bb82bd",
+    "hostedRunId": 37747657210
   },
   "authorization": {
     "stage": "2",
@@ -915,14 +919,19 @@
     "2.1": "accepted_hosted_verified_closed",
     "2.2": "accepted_hosted_verified_closed",
     "2.3": "accepted_hosted_verified_closed",
-    "2.4": "in_progress_locally_validated_not_accepted",
+    "2.4": "accepted_hosted_verified_closed",
     "2.5": "not_started_unauthorized"
   },
   "stage24": {
-    "status": "in_progress_locally_validated",
-    "accepted": false,
-    "hostedVerified": false,
-    "commit": null,
+    "status": "closed_hosted_verification_complete",
+    "accepted": true,
+    "hostedVerified": true,
+    "commit": {
+      "sha": "891af278313f68f385dbf6e405f9304347bb82bd",
+      "message": "feat: add HTTP authentication endpoints",
+      "push": "main_to_origin_success_without_force",
+      "filesCommitted": 23
+    },
     "contract": "docs/security/AUTH_API.md",
     "endpoints": [
       {
@@ -1023,7 +1032,8 @@
       "A new session is created on each successful login, so a pre-login token is not carried forward, but an already-authenticated session token is not rotated.",
       "Revoking one session does not affect a user other sessions or devices.",
       "Credentialed CORS is not enabled, so the web and control applications on ports 3000 and 3001 cannot yet call the API from a browser. Wiring them requires a later explicit allowlist decision.",
-      "No AuthenticationEvent rows are written; event recording needs its own sanitized metadata contract."
+      "No AuthenticationEvent rows are written; event recording needs its own sanitized metadata contract.",
+      "Rehash-on-login is not implemented. Argon2id parameters stay frozen and parameter evolution remains an explicit follow-up."
     ],
     "defectsFoundAndFixedDuringReview": [
       "new URL accepts a literal wildcard in a host, so https://*.example.com would have been stored as a trusted origin that can never match; host characters are now validated explicitly.",
@@ -1071,6 +1081,103 @@
       "Stage 2.3 session primitive",
       "health and readiness contracts",
       "test-database safety guards"
-    ]
+    ],
+    "hosted": {
+      "runId": 37747657210,
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/37747657210",
+      "headSha": "891af278313f68f385dbf6e405f9304347bb82bd",
+      "completedAt": "2026-10-08",
+      "overallConclusion": "failure solely because of the accepted, unsuppressed security-audit baseline. Not green.",
+      "validate": {
+        "conclusion": "success",
+        "duration": "1m35s",
+        "stepsAllPassed": true,
+        "unitToolchainTests": 112,
+        "vitestUnitTests": 111,
+        "nodeToolchainTests": 1,
+        "unitBreakdown": {
+          "config": 22,
+          "database": 8,
+          "redis": 4,
+          "worker": 4,
+          "api": 73
+        },
+        "integrationTests": 134,
+        "integrationBreakdown": {
+          "database": 35,
+          "redis": 8,
+          "api": 91
+        },
+        "focusedAuthUnitTests": 37,
+        "focusedAuthIntegrationTests": 66,
+        "smokeAssertions": 19,
+        "migrationsReplayed": 3,
+        "mobileCheck": "pass",
+        "mobileExport": "pass_android_578_modules",
+        "trackedFileCleanliness": "pass",
+        "hostedCountsMatchLocal": true
+      },
+      "securityAudit": {
+        "conclusion": "failure",
+        "expected": true,
+        "duration": "25s",
+        "findings": 2,
+        "severity": "high",
+        "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
+        "packages": ["node-forge<=1.4.0", "braces<=3.0.3"],
+        "patchedVersions": "None for both",
+        "newAdvisories": 0,
+        "suppressionApplied": false,
+        "thresholdChanged": false
+      },
+      "otherJobs": "none",
+      "annotations": [
+        "Node.js 20 deprecated; actions/checkout@v4, actions/setup-node@v4 and pnpm/action-setup@v4 are forced onto Node.js 24. Pre-existing follow-up, unchanged.",
+        "ubuntu-latest migrates to Ubuntu 26 between October 19 and November 19, 2026. Pre-existing follow-up, unchanged.",
+        "Concurrent Prisma generation EEXIST was not observed on this run; that tooling follow-up remains open."
+      ]
+    },
+    "securityReviewCheckpoint": {
+      "date": "2026-10-08",
+      "enumerationResistance": "Independently verified: unknown email, wrong password, missing credential, disabled user, and policy-invalid passwords all produce byte-identical status, headers and body. No session is written and no Set-Cookie is issued on any failure path. No password, digest, address, Prisma code, or stack reaches the client.",
+      "timingMitigationMeasured": "Failed path with a policy-valid password took 324 ms against 348 ms for a real successful verification, so the committed decoy Argon2id digest is exercised on the failure path. This is not a constant-time claim: a policy-invalid password short-circuits before Argon2 symmetrically on both paths, database round trips are not equalised, and there is no throttling.",
+      "sessionSecurity": "Exactly one session per successful login; token present only in Set-Cookie and absent from body, other headers and URL; PostgreSQL stores only the SHA-256 digest and no column contains the raw token; HttpOnly and SameSite=Lax in both environments; __Host- and Secure in production with no configuration able to disable it; no Domain; measured lifetime exactly 604800000 ms with cookie Max-Age matching; duplicate cookies fail closed; logout revokes only the presented session, preserves the original revocation timestamp on repeat, leaves other sessions valid, and clears the cookie with matching attributes.",
+      "originEnforcement": "All ten disallowed Origin forms rejected with 403, including scheme, port and host differences, a suffix lookalike, a wildcard, a trailing slash, and four spoofed forwarded/Host/Referer headers. Query-supplied credentials and tokens are ignored: a logout driven by ?token= does not revoke, and /auth/me cannot be driven by a query token.",
+      "noCredentialedCors": "No Access-Control-Allow-Origin, Access-Control-Allow-Credentials or Access-Control-Allow-Headers header is emitted.",
+      "logging": "No console, Logger, stdout or stderr write exists in the authentication path. Nest runs with logger disabled and the Prisma client keeps logging off.",
+      "deploymentBoundary": "Not deployed. Absence of rate limiting is documented as a blocker for public internet exposure in docs/security/AUTH_API.md, docs/architecture/SECURITY.md and project-state.json.",
+      "defectsFoundAndFixed": "Three, all in test/state bookkeeping rather than product behaviour: the recorded unit total was corrected from 109 to 112; seven integration assertions that counted sessions globally were scoped to the test own fixtures after unrelated residue made them fail; a defect found earlier in the stage in the origin allowlist validation, the exception filter error-type matching, and the oversized-body status are all still fixed."
+    },
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-08",
+    "acceptanceScope": "owner_accepted_hosted_verified",
+    "closed": true,
+    "closedAt": "2026-10-08",
+    "acceptanceBoundedToGlobalIdentityAuthentication": true,
+    "documentationClosure": {
+      "date": "2026-10-08",
+      "files": ["PROJECT_STATE.md", "project-state.json", "tasks/CURRENT.md"],
+      "commitMessage": "docs: close Stage 2.4 hosted validation",
+      "authorizedBy": "Project owner",
+      "implementationFilesChanged": false,
+      "testsChanged": false,
+      "schemaMigrationsDependenciesLockfileCiChanged": false,
+      "workflowMarkedGreen": false,
+      "advisoriesMarkedResolved": false
+    },
+    "unresolvedRisksConfirmedAtAcceptance": {
+      "date": "2026-10-08",
+      "noLoginRateLimiting": "open; public internet deployment prohibited until Stage 2.6",
+      "trustedOriginNotProxyAware": "open",
+      "sessionBoundCsrfForFutureMutations": "deferred",
+      "rehashOnLogin": "not implemented",
+      "credentialedCorsForWebAndControl": "not implemented; contract is same-origin only",
+      "authenticationEventRecording": "not implemented",
+      "stage23SessionConcurrencyLimitations": "documented and unchanged",
+      "nodeForgeGHSA86w9Cpqp85rv": "unresolved; no patched upstream release",
+      "bracesGHSAVfj7CjwP6xm": "unresolved; no patched upstream release",
+      "previouslyDocumentedFollowUps": "preserved unchanged",
+      "noResolutionsInvented": true
+    }
   }
 }
