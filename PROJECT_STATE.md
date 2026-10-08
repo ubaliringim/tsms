@@ -12,13 +12,13 @@ Stage: 2 - Authentication & Identity
 
 Stage status: AUTHORIZED, not accepted. Owner approved Specification v1.0.
 
-Current substage: 2.2 - Password Credential Service (ACCEPTED / HOSTED VERIFIED / CLOSED). Stage 2.1 remains ACCEPTED / HOSTED VERIFIED / CLOSED.
+Current substage: 2.3 - Secure Session Foundation (LOCALLY VALIDATED / READY FOR OWNER REVIEW; NOT ACCEPTED). Stages 2.1 and 2.2 remain ACCEPTED / HOSTED VERIFIED / CLOSED.
 
 Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Next substage: 2.3 - Session Foundation. NOT STARTED / UNAUTHORIZED.
+Next substage: 2.4 - Login orchestration. NOT STARTED / UNAUTHORIZED.
 
 Accepted capabilities: PostgreSQL local infrastructure, Redis local infrastructure, pgvector extension foundation, Prisma 7 database foundation, packages/database, packages/redis, migration workflow, database and Redis lifecycle handling, API and worker liveness/readiness separation, integration-test infrastructure, test-database safety controls, Docker Compose workflow, fresh-state reproducibility, the Stage 1 CI workflow, the three Prisma dependency security remediations, the temporary InfrastructureProbe scaffolding, and the smoke-test readiness extensions. The Stage 1 known issues were reviewed and accepted as non-blocking.
 
@@ -34,15 +34,15 @@ Closure validation (2026-10-07) found and fixed two real Stage 1 defects before 
 
 Stage 2.1 implementation: six global identity persistence models, native UUID columns with Prisma UUIDv7 defaults, unique normalized email and hash fields, one credential per user, explicit restrictive foreign keys, lifecycle timestamps, and a new forward migration. InfrastructureProbe is retained for independent Stage 1 regression tests. No accepted migration is changed. Validation passed: 47 unit/toolchain tests, 43 integration tests (26 new), 16 smoke assertions, builds, mobile dependency check/export, and a fresh three-migration replay with no schema drift. The audit still fails on exactly the known two high advisories. See tasks/CURRENT.md for commands, outcomes, and limitations.
 
-Not implemented: HTTP authentication behavior, login/logout, sessions/cookies/middleware, token generation or consumption, recovery/email delivery, UI, tenants, memberships, roles, permissions, or other product functionality. Stage 2.2 adds only the Argon2 password dependency.
+Not implemented: HTTP authentication behavior, login/logout, session HTTP transport/cookies/middleware, token generation or consumption, recovery/email delivery, UI, tenants, memberships, roles, permissions, or other product functionality. Stage 2.2 adds only the Argon2 password dependency.
 
 Version-control handoff: owner authorized committing the ten reviewed Stage 2.1/state files as `feat: add authentication identity schema` and pushing main to origin after all eight boundary checks pass. All eight passed, including a refreshed audit with exactly the two known high advisories. Hosted verification was pending at commit preparation; the completed result is recorded below.
 
 Validation limitation: forced parallel checking exposed concurrent Prisma generation in the existing build/typecheck scripts (EEXIST). The uncached serial check and ordinary default check passed; task configuration is unchanged. Track coordinated generation as a separate tooling follow-up. Hosted Stage 2.1 validate passed; native device/store builds have not run.
 
-Exact next action: owner reviews Stage 2.2 implementation and diff. Do not commit, push, deploy, or start Stage 2.3.
+Exact next action: complete Stage 2.3 local validation and hand off uncommitted changes for owner review. No commit, push, deployment, or Stage 2.4 work.
 
-DO NOT: start Stage 2.3 or later, implement HTTP authentication/session/recovery/tenant/RBAC behavior, modify schema or migrations, weaken audit controls, commit, push, or deploy.
+DO NOT: start Stage 2.4 or later, add HTTP authentication/login/cookie/JWT/recovery/tenant/RBAC behavior, change accepted schema/migrations, weaken audits, commit, push, or deploy.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -77,3 +77,11 @@ Evidence: gh run view job JSON and complete logs (ignored artifacts/stage22/host
 Stage 1 remains ACCEPTED; Stage 2.1 remains ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.2 is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Stage 2 overall is NOT ACCEPTED. Exact next action: hard stop after this authorized documentation closure commit and normal push. **HARD STOP: Stage 2.3 is NOT STARTED / UNAUTHORIZED. Do not begin Stage 2.3 or deploy.**
 
 Final documentation closure: the owner accepted Stage 2.2 and authorized committing only PROJECT_STATE.md, project-state.json, tasks/CURRENT.md, and docs/security/PASSWORD_CREDENTIALS.md with subject `docs: close Stage 2.2 hosted validation`, then pushing main normally. This supersedes the earlier pending-review/no-documentation-commit checkpoint above. All implementation, hosted evidence, unresolved advisories, and existing follow-ups remain unchanged. Stage 1 ACCEPTED; Stage 2.1 and 2.2 ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2 overall NOT ACCEPTED; Stage 2.3 NOT STARTED / UNAUTHORIZED. Validate formatting, state consistency and diff before commit; verify synchronization and clean working tree after push.
+
+## Current authorization - Stage 2.3
+
+The owner separately authorized Secure Session Foundation only. Earlier Stage 2.2 checkpoints above are historical; their Stage 2.3 prohibition is superseded only by this explicit authorization. Stage 2.1 and 2.2 remain CLOSED. Stage 2 overall NOT ACCEPTED. Stage 2.4 NOT STARTED / UNAUTHORIZED. Current handoff: tasks/CURRENT.md; preserved Stage 2.2 handoff: tasks/completed/stage-2-2-password-credentials.md. No commit/push/deploy is authorized for this task.
+
+Stage 2.3 local validation: 32-byte CSPRNG tokens, SHA-256 digest persistence, fixed seven-day expiry, current-user validation, ownership-enforced revocation and revoke-all are implemented as internal primitives. lastSeenAt remains unchanged. Creation/disable/revoke-all race limits are documented in docs/security/SESSIONS.md and tested. All requested local checks passed: 74 unit/toolchain tests, 68 integration tests, 16 smoke assertions, builds, mobile check/export, formatting and diff checks; audit remains expected failure on exactly the two accepted high advisories. No new dependency, schema/migration, endpoint, cookie/JWT, tenant/RBAC or safety-guard change. Stage 2.3 is ready for owner review only, not accepted; hosted verification has not run. Exact next action: owner reviews Stage 2.3 implementation and security results. HARD STOP: no Stage 2.4, commit, push, or deployment without explicit authorization.
+
+Takeover review (2026-10-08) started from 333ee77, equal to origin/main with a clean tree, and revalidated every previous-agent claim rather than trusting it. All confirmed: focused suites, regression suites, smoke, mobile, and the unchanged two-high audit baseline. Three in-scope corrections were made, with no production code, schema, migration, dependency, or safety-guard change: an inaccurate claim about the UUID length check was corrected (it is redundant defence-in-depth; the anchored regex already rejects trailing line terminators, verified empirically against the compiled service); a unit test now pins the rejected identifier shapes across all four JavaScript line terminators and asserts a genuine UUID reaches the database; an integration test now covers the documented disable/re-enable behaviour, which previously had no coverage; and tasks/completed/README.md was updated to index the hosted CI repair, Stage 2.1, and the newly archived Stage 2.2 handoff, and to state that Stage 2 as a whole is not accepted. Stage 0, Stage 1, Stage 2.1 and Stage 2.2 acceptance are untouched. All work remains uncommitted; nothing staged, pushed, or deployed.

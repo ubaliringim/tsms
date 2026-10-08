@@ -1,7 +1,8 @@
 # Password credentials - Stage 2.2
 
 Status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08).
-Stage 2 overall remains NOT ACCEPTED; Stage 2.3 is NOT STARTED / UNAUTHORIZED.
+Stage 2 overall remains NOT ACCEPTED. Stage 2.3 session primitives are separately authorized;
+Stage 2.4 and later remain NOT STARTED / UNAUTHORIZED.
 
 Scope: internal password primitives in apps/api/src/identity. These are not HTTP
 authentication or onboarding. The caller must authorize credential provisioning and

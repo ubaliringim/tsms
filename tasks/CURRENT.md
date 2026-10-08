@@ -1,123 +1,121 @@
-# Current task: Stage 2.2 - Password Credential Service
+# Current task: Stage 2.3 - Secure Session Foundation
 
 Owner: TeamStack Technologies LTD
 
-Stage 1: ACCEPTED. Stage 2.1: ACCEPTED / HOSTED VERIFIED / CLOSED.
-Stage 2.2: ACCEPTED / HOSTED VERIFIED / CLOSED.
-Stage 2 overall: NOT ACCEPTED. Stage 2.3 Session Foundation: NOT STARTED / UNAUTHORIZED.
+Stage 0 and Stage 1: ACCEPTED. Stage 2.1 and 2.2: ACCEPTED / HOSTED VERIFIED / CLOSED.
+Stage 2.3: LOCALLY VALIDATED / READY FOR OWNER REVIEW; NOT ACCEPTED.
+Stage 2 overall: NOT ACCEPTED. Stage 2.4 and later: NOT STARTED / UNAUTHORIZED.
 
-Started on main at 221f17aaab495c9df92548b351eff53ab8c363b5, equal to origin/main,
-with a clean working tree. Read the operating rules, state, architecture/security/database
-conventions, migrations, API structure, package/toolchain and CI configuration before editing.
-Stage 2.1 evidence and owner acceptance are preserved with only the two owner-authorized relative-link corrections in
-[the historical handoff](completed/stage-2-1-identity.md).
+## Starting state
 
-## Implementation and boundaries
+main at 333ee77d26bc9b9a2d7d631bfbf2415d87f22232, matching origin/main, clean working tree.
+Inspected operating rules, state, roadmap, security/database architecture, accepted Prisma
+schema/migrations, API/credential conventions, test guards, package configuration and CI.
+Prior handoff: [Stage 2.2 archive](completed/stage-2-2-password-credentials.md), preserved
+with relative links adjusted for its new directory. No history or follow-up removed.
 
-Internal apps/api/src/identity primitives separate policy, hashing, sanitized errors,
-and Prisma credential persistence. No HTTP wiring or authentication/session behavior.
-See [durable password security design](../docs/security/PASSWORD_CREDENTIALS.md).
+## Implementation and security decisions
 
-Policy: 15-128 Unicode code points; no composition requirements, trimming, normalization,
-case folding or truncation. Spaces are preserved; lone surrogates and non-strings rejected.
-Argon2id argon2@0.45.1: version 19, 65536 KiB (64 MiB), 3 iterations, 1 lane,
-32-byte output, library-generated random 16-byte salts. No production cost injection.
-Verification returns matches/needsRehash; operational failures have fixed safe codes.
-No original errors/causes or credential material escape. Native prebuild installed on
-Windows Node 24.16.0. Linux supported upstream; hosted Stage 2.2 verification is pending.
-The narrow allowBuilds addition was reviewed against the risk register; existing
-advisory reachability and dispositions are unchanged.
+[Session security design](../docs/security/SESSIONS.md) defines the exact contract.
+Three internal identity files implement fixed safe error classifications, token primitives,
+and a Prisma SessionService. No HTTP/Nest registration or password/login coordination.
 
-Creation uses the existing FK and unique userId constraint, returning only non-secret
-metadata. Replacement performs compare-and-swap against the old hash/timestamp, and
-advances passwordChangedAt at least one millisecond. No schema or migration changes.
-No login, routes, session issuance/validation, cookies, JWT, recovery, email behavior,
-tenants, membership, roles, permissions, UI, pepper, history or external breach service.
+- Node CSPRNG generates 32-byte (256-bit) opaque secrets, 43-character canonical base64url.
+- SHA-256 over the exact UTF-8 token string; only lowercase hex digest persists.
+- createSession requires an existing ACTIVE User; returns token/sessionId/expiresAt once.
+- Seven-day fixed absolute lifetime, explicit UTC-compatible dates, injected clock for tests.
+- validateSession checks current row, revocation, strict expiry and current User status;
+  returns only userId/sessionId/expiresAt. No status cache, lastSeenAt writes or sliding expiry.
+- Ownership and revokedAt=null are enforced in the individual atomic update. Repeated
+  revocation preserves timestamp; cross-user/missing IDs fail without changing the row.
+- Revoke-all updates only that user's unrevoked, unexpired rows and returns a count.
+- Malformed input and expected rejection have fixed codes; underlying failures are sanitized
+  SERVICE_FAILURE without original error messages/causes. No secret logging or fake success.
 
-## Tests and performance
+Creation and disabling are not fully serialized: an insert racing with disable can succeed,
+but validation rechecks current account status. Creation outside revoke-all's update snapshot
+can survive. In-flight validation can race with later changes; no perpetual authorization grant.
+A future workflow can coordinate all writers with a per-user transaction lock or an approved
+session-generation schema extension. Neither is implemented. Re-enabling never clears revocation;
+unrevoked, unexpired sessions may validate again. No schema or migration changes are needed.
 
-Focused password unit tests: 15 PASS. Focused real-database integration tests: 8 PASS.
-Unit coverage: policy boundaries, types, Unicode and whitespace, exact production costs,
-random salts, correct/wrong candidates, corrupt hashes/resource bounds, rehash and output
-length evolution, and sanitized database errors. Integration coverage: hash-only creation,
-FK/nonexistent user, concurrent duplicate creation, policy rejection without writes,
-replacement/new-versus-old verification, advancing timestamps, missing credentials,
-unchanged state after invalid replacement, and deterministic concurrent replacement.
-Tests use existing TEST_DATABASE_URL guards and never fall back to DATABASE_URL.
-Synthetic candidates are generated at runtime; no secret snapshots or fixture files.
+## Tests
 
-Local single-operation measurement: hash approximately 181 ms, verify 189 ms, at
-64 MiB / 3 iterations / 1 lane. Informational, not a CI performance assertion.
+Focused unit: 12 PASS. Token entropy source/format/uniqueness, deterministic hashing, canonical
+encoding and unused-bit rejection, immutable policy, invalid inputs before database access,
+sanitized failures in all four operations, invalid clock and post-query expiry sampling.
+Focused database integration: 17 PASS. Hash-only creation, ACTIVE/DISABLED/missing users,
+unique digest constraint, minimal context, no last-seen writes, exact expiry and resurrection
+checks, current status, disable/re-enable restoration, ownership, idempotence, revoke-all
+isolation/history, concurrent creation and revocation, disable/create race, and revoke-all/create
+limitation.
+All fixtures use guarded TEST_DATABASE_URL and child-first scoped cleanup. No fallback,
+truncation, sleeps, token/hash snapshots, or weakened safety rules.
 
 ## Validation
 
-- Frozen install: PASS, updated lockfile resolves without modification.
-- Prisma generation: PASS; accepted schema and all three migrations unchanged.
-- Lint: PASS. Typecheck: PASS (11 tasks; unchanged workspaces used Turbo cache).
-- Unit/toolchain: PASS, 62 total (61 Vitest plus 1 Node); 24 API tests include 15 new.
-- Build: PASS, 7 build tasks; applicable unchanged outputs used existing cache.
-- Integration: PASS, 51 total (35 database, 8 Redis, 8 credential), zero skipped.
-- Smoke: PASS, 16 assertions with existing PostgreSQL/Redis reachable.
-- Formatting: PASS; final aggregate pnpm check: PASS with applicable Turbo caches.
-- Mobile check/export: PASS; Android export contains 578 modules.
-- Final diff check and security/state review: PASS; no schema, migration, CI or Turbo changes.
-- Pre-install, post-install and final audits: EXPECTED FAIL, exactly two known high advisories;
-  node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm. Nothing suppressed.
+- pnpm install --frozen-lockfile: PASS; dependency graph and lockfile unchanged.
+- pnpm db:generate: PASS; Prisma 7.10.0; no schema/migration modifications.
+- pnpm lint: PASS; zero warnings.
+- pnpm typecheck: PASS; 11 tasks, unchanged tasks used Turbo cache.
+- pnpm test: PASS; 74 unit/toolchain tests (73 Vitest plus one Node; 36 API tests).
+- pnpm build: PASS; seven build tasks, applicable cache reuse.
+- pnpm test:integration: PASS; 68 cases (35 database, eight Redis, 25 API including 17 new), none skipped; three migrations, none pending.
+- pnpm audit --audit-level=high: EXPECTED FAIL, exactly two accepted high advisories:
+  node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm. No new finding or suppression.
+- pnpm format:check and pnpm check: PASS; applicable existing Turbo caches reused.
+- pnpm smoke: PASS, 16 assertions; PostgreSQL and Redis reachable.
+- pnpm mobile:check and pnpm mobile:export: PASS, Android 578 modules.
+- git diff --check and final security/state review: PASS.
 
-Initial focused testing caught the pinned library's m,p,t PHC serialization order;
-the defensive envelope and parameter assertion were corrected and all focused tests rerun.
-Initial compilation found the existing Prisma namespace export is type-only and the TS
-library target omits String.isWellFormed; the service now maps safe error codes structurally
-and rejects lone surrogates via Unicode-aware matching. No compiler/schema change.
+## Boundaries and follow-ups
 
-## Known follow-ups and handoff
+No login/logout endpoints, cookies, JWTs, middleware, refresh, recovery, cleanup worker,
+auth-event recording, tenant membership, RBAC or UI. No dependency, configuration, CI,
+accepted schema/migration, password primitive or test-safety changes.
 
-Preserve the two accepted advisories, scoped Stage 1 Prisma overrides, concurrent Prisma
-generation EEXIST, Actions Node 20-to-24 warning, Ubuntu runner migration, native/store and
-non-amd64 validation, existing infrastructure/toolchain issues, and InfrastructureProbe
-retirement via a future forward migration. No follow-up is resolved by this task.
-Stage 2.2 follow-up: hosted Linux/native installation verification after owner review;
-review concurrency capacity and verification compatibility when changing password policy/costs.
+Preserve both accepted advisories, scoped Prisma overrides, concurrent Prisma generation
+EEXIST, Actions Node 20-to-24 warning, Ubuntu migration, native/store/non-amd64 limitations,
+existing infrastructure/toolchain issues, InfrastructureProbe retirement through a forward
+migration, and Stage 2.2 portability/capacity/policy-evolution reviews.
+New limitations: documented creation/disable/revoke-all races; future coordinated atomic
+workflows need authorization. Hosted Stage 2.3 verification has not run.
 
-All work remains uncommitted. Do not commit, push, deploy, or start Stage 2.3.
-Exact next action: owner reviews Stage 2.2 implementation and diff.
+All changes remain uncommitted. Recommended commit only: feat: add secure session foundation.
+Exact next action: owner reviews Stage 2.3 implementation and security results. DO NOT start Stage 2.4, commit, push or deploy without explicit authorization.
+
+Final review added an exact 36-character length check alongside the anchored UUID pattern.
+Takeover verification corrected the earlier claim about it: the length check is **redundant
+defence-in-depth, not the mechanism that rejects trailing terminators**. Because the pattern
+ends with a specific class `[0-9a-f]{12}`, JavaScript's `$`-before-final-line-terminator
+behaviour cannot apply, and the anchored regex alone already rejects `\n`, `\r`, U+2028 and
+U+2029. Verified empirically against the compiled service. Both checks are retained because
+the length check is cheap and removes reliance on that subtlety if the pattern ever changes.
+A new unit test now pins the rejected shapes (all four line terminators, truncation,
+extension, braces, `urn:uuid:` prefix, invalid hex) and asserts that a genuine uppercase
+UUID reaches the database, so the rejection cannot pass vacuously.
+
+Takeover verification also found the documented re-enable behaviour had no coverage. A new
+integration test now pins it in both directions: disabling rejects an otherwise valid session
+with USER_DISABLED, re-enabling restores it with its original absolute expiry, and expiry is
+still enforced afterwards. No production behaviour, timeout, policy or test guard was
+weakened. Relative Markdown links resolve; accepted stage records and all existing security
+dispositions/follow-ups were compared with baseline and preserved.
 
 ## Changed files
 
 - PROJECT_STATE.md
-- apps/api/package.json
-- apps/api/src/identity/password-credential.service.ts
-- apps/api/src/identity/password-error.ts
-- apps/api/src/identity/password-hasher.ts
-- apps/api/src/identity/password-policy.ts
-- apps/api/tests/password.integration.test.mjs
-- apps/api/tests/password.test.mjs
-- apps/api/vitest.config.ts
-- apps/api/vitest.integration.config.ts
+- apps/api/src/identity/session-error.ts
+- apps/api/src/identity/session-token.ts
+- apps/api/src/identity/session.service.ts
+- apps/api/tests/session.integration.test.mjs
+- apps/api/tests/session.test.mjs
 - docs/security/PASSWORD_CREDENTIALS.md
-- pnpm-lock.yaml
-- pnpm-workspace.yaml
+- docs/security/SESSIONS.md
 - project-state.json
 - tasks/CURRENT.md
 - tasks/ROADMAP.md
-- tasks/completed/stage-2-1-identity.md
+- tasks/completed/README.md
+- tasks/completed/stage-2-2-password-credentials.md
 
-No files deleted. Git HEAD remains the starting baseline; nothing staged, committed, pushed, or deployed.
-
-## Final review and commit authorization
-
-The owner authorized repairing the two archived Markdown links, final validation, committing the reviewed Stage 2.2 files as `feat: add password credential service`, and pushing main normally if all checks pass. Both link targets exist and all relative Markdown links in changed documentation/state files resolve. Production Argon2 costs are unchanged and frozen; additional malformed/excessive-cost probes passed without emitting credential material. No schema, migration, logging, HTTP authentication, or tenant/RBAC expansion. The refreshed audit contains only the two accepted high advisories. This authorization supersedes the earlier uncommitted-review checkpoint instructions above. Record actual hosted results afterward and leave those state updates uncommitted; no second documentation commit, amendment, force push, deployment, or Stage 2.3 work is authorized.
-
-Final closure validation rerun: focused unit tests 15 PASS; pnpm check PASS (formatting, lint, typecheck, 62 unit/toolchain tests and seven build tasks); integration 51 PASS, including eight credential cases and atomic replacement race; diff check PASS. The first sandboxed smoke attempt passed 15 assertions then timed out fetching the Control route; inspection found no remaining run-owned processes and the unchanged suite rerun outside the sandbox passed all 16. No timeout or security guard was weakened. Final audit remains exactly two accepted high findings.
-
-## Stage 2.2 hosted verification complete - 2026-10-08
-
-Implementation commit `cdf0ecd62565e9f1a0c0b701263e36c2e9092920` (`feat: add password credential service`) was pushed normally to origin/main. Exactly 17 reviewed files were committed, including the two repaired archive links. No amendment, force push, deployment, or second documentation commit.
-
-[Hosted run 37725238380](https://github.com/ubaliringim/tsms/actions/runs/37725238380) completed for this exact SHA. `validate` PASS (1m38s): 62 unit/toolchain tests, 51 integration tests (35 database, eight Redis, eight credential), 16 smoke assertions; production Argon2id tests and Linux native installation PASS, Prisma generation and migration replay PASS, mobile check/export PASS, tracked-file cleanliness PASS. `security-audit` EXPECTED FAIL (24s), exactly node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm, both high. No new advisory, suppression, or resolution. No other jobs. Overall workflow failure is solely the expected audit gate. Node 20-to-24 and Ubuntu migration notices remain. The concurrent Prisma generation follow-up remains open.
-
-Evidence: gh run view job JSON and complete logs (ignored artifacts/stage22/hosted-run.log). Working tree was clean after pushing, and local HEAD/origin/main matched the implementation SHA. This post-run handoff updates PROJECT_STATE.md, project-state.json, tasks/CURRENT.md, and docs/security/PASSWORD_CREDENTIALS.md only; the owner has now accepted Stage 2.2 and authorized this documentation closure commit. These completed results supersede the earlier pending/uncommitted implementation checkpoint above. Hosted Linux verification is now complete; future target portability and existing infrastructure/toolchain/native/store follow-ups remain.
-
-Stage 1 remains ACCEPTED; Stage 2.1 remains ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.2 is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Stage 2 overall is NOT ACCEPTED. Exact next action: hard stop after this authorized documentation closure commit and normal push. **HARD STOP: Stage 2.3 is NOT STARTED / UNAUTHORIZED. Do not begin Stage 2.3 or deploy.**
-
-Final documentation closure: the owner accepted Stage 2.2 and authorized committing only PROJECT_STATE.md, project-state.json, tasks/CURRENT.md, and docs/security/PASSWORD_CREDENTIALS.md with subject `docs: close Stage 2.2 hosted validation`, then pushing main normally. This supersedes the earlier pending-review/no-documentation-commit checkpoint above. All implementation, hosted evidence, unresolved advisories, and existing follow-ups remain unchanged. Stage 1 ACCEPTED; Stage 2.1 and 2.2 ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2 overall NOT ACCEPTED; Stage 2.3 NOT STARTED / UNAUTHORIZED. Validate formatting, state consistency and diff before commit; verify synchronization and clean working tree after push.
+No files deleted. All 13 files remain uncommitted; nothing staged, pushed, or deployed. Takeover review added the two tests and documentation corrections described above; it did not change production code, schema, migrations, dependencies, or safety guards.

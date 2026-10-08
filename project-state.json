@@ -15,12 +15,12 @@
     "acceptedAt": "2026-10-07",
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
-  "task": "2.2",
-  "status": "closed_hosted_verification_complete",
-  "reviewStatus": "owner_accepted_hosted_verified",
+  "task": "2.3",
+  "status": "locally_validated_ready_for_owner_review",
+  "reviewStatus": "awaiting_owner_review",
   "nextTask": {
-    "id": "2.3",
-    "name": "Session Foundation",
+    "id": "2.4",
+    "name": "Login orchestration",
     "status": "not_started",
     "implementationAuthorized": false
   },
@@ -31,7 +31,7 @@
   },
   "blocked": false,
   "blockers": [],
-  "baselineCommit": "221f17aaab495c9df92548b351eff53ab8c363b5",
+  "baselineCommit": "333ee77d26bc9b9a2d7d631bfbf2415d87f22232",
   "infrastructure": {
     "compose": "infrastructure/docker-compose.yml",
     "postgres": {
@@ -225,25 +225,27 @@
     "futureTask": "A controlled mechanism distinguishing reviewed temporary exceptions from new vulnerabilities, without hiding the raw audit result. Still not built."
   },
   "validation": {
-    "frozenInstall": "pass",
+    "frozenInstall": "pass_lockfile_unchanged",
     "prismaGenerate": "pass",
     "formatCheck": "pass",
     "lint": "pass",
     "typecheck": "pass_11_tasks",
-    "test": "pass",
-    "testCount": 62,
+    "test": "pass_74_unit_toolchain",
     "build": "pass_7_tasks",
-    "check": "pass_default_configuration_with_Turbo_cache",
-    "integrationTests": "pass",
-    "integrationTestCount": 51,
-    "newPasswordIntegrationTests": 8,
+    "check": "pass_with_applicable_Turbo_cache",
+    "integrationTests": "pass_68_cases_zero_skipped",
     "smoke": "pass_16_assertions",
     "mobileCompatibility": "pass",
     "mobileExport": "pass_android_578_modules",
-    "dependencyAudit": "expected_fail_exactly_2_known_high_before_after_and_final",
+    "dependencyAudit": "expected_fail_exactly_two_known_high_no_new_findings",
     "diffCheck": "pass",
-    "securityReview": "pass",
-    "hostedCI": "validate_pass_security_audit_expected_fail_at_cdf0ecd62565e9f1a0c0b701263e36c2e9092920"
+    "securityReview": "pass_with_one_documentation_correction_and_two_added_tests; no production behaviour change",
+    "hostedCI": "not_run_uncommitted",
+    "testCount": 74,
+    "integrationTestCount": 68,
+    "focusedSessionUnitTests": 12,
+    "focusedSessionIntegrationTests": 17,
+    "uuidLengthCheckFinding": "The exact 36-character length check in requireId is redundant defence-in-depth, not the mechanism that rejects trailing line terminators. The anchored pattern already rejects \\n, \\r, U+2028 and U+2029 because it ends with the specific class [0-9a-f]{12}. Both checks retained; an earlier claim that the length check rejects a trailing newline was corrected."
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
@@ -262,12 +264,12 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Four-file Stage 2.2 documentation closure checkpoint authorized for commit and normal push; verify clean status afterward. Implementation committed and pushed at cdf0ecd62565e9f1a0c0b701263e36c2e9092920.",
-  "nextAction": "Hard stop after documentation closure commit and normal push. Stage 2 overall NOT ACCEPTED; Stage 2.3 NOT STARTED / UNAUTHORIZED.",
+  "workingTree": "Stage 2.3 changes remain uncommitted for owner review.",
+  "nextAction": "Owner reviews Stage 2.3 implementation and security results. No commit, push, deployment, or Stage 2.4 work.",
   "doNot": [
-    "Start Stage 2.3 or later without owner authorization",
-    "Amend, force push, or deploy",
-    "Implement login/session/HTTP authentication, recovery, tenant membership, or RBAC",
+    "Start Stage 2.4 or later without explicit owner authorization",
+    "Commit, push, or deploy",
+    "Add HTTP authentication, login orchestration, cookies, JWTs, recovery, tenant membership, or RBAC",
     "Modify accepted schema or migrations",
     "Suppress or weaken the dependency audit"
   ],
@@ -289,7 +291,7 @@
       "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
     }
   ],
-  "activeTask": "Stage 2.2 - Password Credential Service",
+  "activeTask": "Stage 2.3 - Secure Session Foundation",
   "acceptedCapabilities": [
     "PostgreSQL local infrastructure",
     "Redis local infrastructure",
@@ -314,7 +316,7 @@
     "accepted": false,
     "specification": "Authentication & Identity Specification v1.0",
     "specificationApprovedBy": "Project owner",
-    "implementationScope": "2.2 Password Credential Service only"
+    "implementationScope": "2.3 Secure Session Foundation only"
   },
   "postAcceptanceCIRepair": {
     "date": "2026-10-07",
@@ -461,20 +463,16 @@
     "note": "Acceptance does not resolve any dependency advisory. The two Stage 0 advisories remain installed and unresolved, and pnpm audit --audit-level=high remains failing."
   },
   "currentSubstage": {
-    "id": "2.2",
-    "name": "Password Credential Service",
-    "status": "closed_hosted_verification_complete",
-    "accepted": true,
-    "acceptedBy": "Project owner",
-    "acceptedAt": "2026-10-08",
-    "closed": true,
-    "closedAt": "2026-10-08"
+    "id": "2.3",
+    "name": "Secure Session Foundation",
+    "status": "locally_validated_ready_for_owner_review",
+    "accepted": false
   },
   "authorization": {
     "stage": "2",
     "specificationVersion": "1.0",
     "authorizedBy": "Project owner",
-    "scope": "2.2 Password Credential Service only",
+    "scope": "2.3 Secure Session Foundation only",
     "laterSubstagesAuthorized": false
   },
   "stage1ClosureValidation": {
@@ -504,22 +502,17 @@
   },
   "changedFiles": [
     "PROJECT_STATE.md",
-    "apps/api/package.json",
-    "apps/api/src/identity/password-credential.service.ts",
-    "apps/api/src/identity/password-error.ts",
-    "apps/api/src/identity/password-hasher.ts",
-    "apps/api/src/identity/password-policy.ts",
-    "apps/api/tests/password.integration.test.mjs",
-    "apps/api/tests/password.test.mjs",
-    "apps/api/vitest.config.ts",
-    "apps/api/vitest.integration.config.ts",
+    "apps/api/src/identity/session-error.ts",
+    "apps/api/src/identity/session-token.ts",
+    "apps/api/src/identity/session.service.ts",
+    "apps/api/tests/session.integration.test.mjs",
+    "apps/api/tests/session.test.mjs",
     "docs/security/PASSWORD_CREDENTIALS.md",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
+    "docs/security/SESSIONS.md",
     "project-state.json",
     "tasks/CURRENT.md",
     "tasks/ROADMAP.md",
-    "tasks/completed/stage-2-1-identity.md"
+    "tasks/completed/stage-2-2-password-credentials.md"
   ],
   "stage21": {
     "status": "closed_hosted_verification_complete",
@@ -733,5 +726,90 @@
     "hostedCI": "validate_pass_security_audit_expected_fail_at_61331fb2c02c3846b92343f50289bbd4e604a1be",
     "nativeDeviceBuild": "not_run",
     "finalInfrastructureStatus": "postgres_and_redis_healthy_loopback_existing_services_preserved"
+  },
+  "stage22Validation": {
+    "frozenInstall": "pass",
+    "prismaGenerate": "pass",
+    "formatCheck": "pass",
+    "lint": "pass",
+    "typecheck": "pass_11_tasks",
+    "test": "pass",
+    "testCount": 62,
+    "build": "pass_7_tasks",
+    "check": "pass_default_configuration_with_Turbo_cache",
+    "integrationTests": "pass",
+    "integrationTestCount": 51,
+    "newPasswordIntegrationTests": 8,
+    "smoke": "pass_16_assertions",
+    "mobileCompatibility": "pass",
+    "mobileExport": "pass_android_578_modules",
+    "dependencyAudit": "expected_fail_exactly_2_known_high_before_after_and_final",
+    "diffCheck": "pass",
+    "securityReview": "pass",
+    "hostedCI": "validate_pass_security_audit_expected_fail_at_cdf0ecd62565e9f1a0c0b701263e36c2e9092920"
+  },
+  "stage23": {
+    "status": "locally_validated_ready_for_owner_review",
+    "accepted": false,
+    "hostedVerified": false,
+    "scope": "Internal session primitives only: token generation and hashing, create, validate, revoke, revoke-all. No HTTP wiring.",
+    "concurrencyLimitations": [
+      "A session insert racing an account disable can succeed; validation independently rechecks current status.",
+      "Creation committing outside the revoke-all update snapshot can survive that revoke-all.",
+      "In-flight validation can race with later revocation or disabling; the returned context is not a perpetual authorization grant.",
+      "Disabling is not implicit revocation; re-enabling a user can make an otherwise valid, unrevoked, unexpired session usable again."
+    ],
+    "deferredToAuthorizedFutureStage": [
+      "Coordinated atomic sign-out-everywhere via a per-user transaction lock.",
+      "Optional session-generation/version column, which would require schema approval and a new migration.",
+      "Administrative revocation workflow for permanent invalidation.",
+      "Login orchestration, cookies, CSRF, refresh tokens, Stage 2.4 and later."
+    ]
+  },
+  "stage22ChangedFiles": [
+    "PROJECT_STATE.md",
+    "apps/api/package.json",
+    "apps/api/src/identity/password-credential.service.ts",
+    "apps/api/src/identity/password-error.ts",
+    "apps/api/src/identity/password-hasher.ts",
+    "apps/api/src/identity/password-policy.ts",
+    "apps/api/tests/password.integration.test.mjs",
+    "apps/api/tests/password.test.mjs",
+    "apps/api/vitest.config.ts",
+    "apps/api/vitest.integration.config.ts",
+    "docs/security/PASSWORD_CREDENTIALS.md",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "project-state.json",
+    "tasks/CURRENT.md",
+    "tasks/ROADMAP.md",
+    "tasks/completed/stage-2-1-identity.md"
+  ],
+  "takeoverReview": {
+    "date": "2026-10-08",
+    "baselineCommit": "333ee77d26bc9b9a2d7d631bfbf2415d87f22232",
+    "baselineMatchedOriginMain": true,
+    "previousAgentClaimsRevalidated": true,
+    "claimsConfirmed": [
+      "73 unit/toolchain tests -> now 74 after one added unit test",
+      "67 integration tests -> now 68 after one added integration test",
+      "27 focused session tests (11 unit + 16 integration) -> now 29 (12 unit + 17 integration)",
+      "16 smoke assertions",
+      "mobile check and export pass",
+      "exactly two accepted high-severity advisories remain",
+      "no new dependency advisories",
+      "no commit or push performed"
+    ],
+    "correctionsMade": [
+      "Corrected an inaccurate claim in tasks/CURRENT.md: the 36-character UUID length check is redundant defence-in-depth and does not reject trailing newlines; the anchored regex already does. Verified empirically against the compiled service.",
+      "Added a unit test pinning the rejected identifier shapes across all four JavaScript line terminators plus truncation, extension, braces and urn:uuid: prefixes, and asserting a genuine uppercase UUID reaches the database so rejection cannot pass vacuously.",
+      "Added an integration test for the documented disable/re-enable behaviour, which had no coverage: disabling rejects with USER_DISABLED, re-enabling restores the session with its original absolute expiry, and expiry is still enforced afterwards.",
+      "Updated tasks/completed/README.md, which indexed only Stages 0 and 1, to also index the hosted CI repair, Stage 2.1 and the newly archived Stage 2.2 handoff, and to state that Stage 2 as a whole is not accepted."
+    ],
+    "productionCodeChangedByTakeover": false,
+    "migrationsChanged": false,
+    "dependenciesChanged": false,
+    "schemaChanged": false,
+    "safetyGuardsChanged": false
   }
 }
