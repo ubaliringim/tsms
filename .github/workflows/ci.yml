@@ -30,6 +30,10 @@ env:
   # origins that match the documented local development ports. CI exercises the
   # Origin guard only through its own tests; the smoke checks hit /health and /ready.
   API_TRUSTED_ORIGINS: http://127.0.0.1:3000,http://127.0.0.1:3001
+  # Stage 2.5 password recovery. No email provider is authorized, so delivery stays
+  # disabled and the recovery endpoints fail closed. The loopback URL base is only
+  # here so the configuration shape is exercised; nothing is delivered.
+  API_PASSWORD_RECOVERY_DELIVERY_MODE: disabled
   # The safety guards in packages/database and packages/redis require the
   # database name to end in _test, a loopback host, and a non-zero Redis logical
   # database. These values satisfy exactly that and nothing more.

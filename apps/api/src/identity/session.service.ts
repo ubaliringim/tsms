@@ -44,25 +44,47 @@ export class SessionService {
       });
       if (!user) throw new SessionError('USER_NOT_FOUND');
       if (user.status !== 'ACTIVE') throw new SessionError('USER_DISABLED');
-      const createdAt = this.now();
-      const expiresAt = new Date(createdAt.getTime() + SESSION_POLICY.lifetimeMs);
-      const token = generateSessionToken();
-      const session = await this.database.session.create({
-        data: {
-          userId,
-          tokenHash: hashSessionToken(token),
-          createdAt,
-          expiresAt,
-          revokedAt: null,
-          lastSeenAt: null,
-        },
-        select: { id: true },
-      });
-      // Only this creation result returns the bearer secret. No retrievable raw copy exists.
-      return { token, sessionId: session.id, expiresAt };
+      return await this.insert(this.database, userId);
     } catch (error) {
       return safeFailure(error);
     }
+  }
+
+  /**
+   * Insert a session using the caller's transaction client - Stage 2.5.
+   *
+   * The caller must already hold the per-user session-mutation lock on this same transaction, so the
+   * insert is ordered against a concurrent password reset rather than racing it. This method performs
+   * no status re-read on its own: the caller performs the in-lock revalidation, because the guarantee
+   * is only meaningful when the whole sequence shares one transaction and one connection.
+   */
+  async createSessionInTransaction(tx: { session: PrismaClient['session'] }, userId: unknown) {
+    requireId(userId);
+    try {
+      return await this.insert(tx as unknown as PrismaClient, userId);
+    } catch (error) {
+      return safeFailure(error);
+    }
+  }
+
+  /** Shared insert body. `client` is either the base client or a transaction client. */
+  private async insert(client: PrismaClient, userId: string) {
+    const createdAt = this.now();
+    const expiresAt = new Date(createdAt.getTime() + SESSION_POLICY.lifetimeMs);
+    const token = generateSessionToken();
+    const session = await client.session.create({
+      data: {
+        userId,
+        tokenHash: hashSessionToken(token),
+        createdAt,
+        expiresAt,
+        revokedAt: null,
+        lastSeenAt: null,
+      },
+      select: { id: true },
+    });
+    // Only this creation result returns the bearer secret. No retrievable raw copy exists.
+    return { token, sessionId: session.id, expiresAt };
   }
 
   async validateSession(rawToken: unknown) {

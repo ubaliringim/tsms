@@ -12,7 +12,21 @@ import { sessionCookiePolicy, SESSION_COOKIE_POLICY } from './auth-cookie.js';
 import { PasswordCredentialService } from './password-credential.service.js';
 import { SessionService } from './session.service.js';
 import { TRUSTED_ORIGINS, TrustedOriginGuard } from './trusted-origin.guard.js';
+import {
+  PasswordRecoveryService,
+  type RecoveryPolicySettings,
+} from './password-recovery.service.js';
+import {
+  recoveryDeliveryFor,
+  type PasswordRecoveryDelivery,
+} from './password-recovery-delivery.js';
+import { RECOVERY_CLOCK } from './password-recovery-token.js';
 import { DatabaseService } from '../infrastructure/database.service.js';
+
+/** DI token for the delivery adapter, so a test can substitute an inspectable one. */
+export const RECOVERY_DELIVERY = Symbol('RECOVERY_DELIVERY');
+/** DI token for the validated recovery settings. */
+export const RECOVERY_POLICY_SETTINGS = Symbol('RECOVERY_POLICY_SETTINGS');
 
 /**
  * Minimal structural view of the platform response, for the cache-header middleware.
@@ -87,19 +101,46 @@ export class AuthModule implements NestModule {
           ) => new AuthService(database.prisma, credentials, sessions),
           inject: [DatabaseService, PasswordCredentialService, SessionService],
         },
+        {
+          // Stage 2.5. Delivery is explicit configuration: `disabled` selects the adapter that
+          // refuses everything, so recovery fails closed without a real mail provider.
+          provide: RECOVERY_DELIVERY,
+          useFactory: (): PasswordRecoveryDelivery =>
+            recoveryDeliveryFor(environment.API_PASSWORD_RECOVERY_DELIVERY_MODE),
+        },
+        {
+          provide: RECOVERY_POLICY_SETTINGS,
+          useValue: Object.freeze({
+            mode: environment.API_PASSWORD_RECOVERY_DELIVERY_MODE,
+            // Validated as an absolute URL at startup, so recovery links are never header-derived.
+            urlBase: environment.API_PASSWORD_RECOVERY_URL_BASE ?? 'https://invalid.localhost/',
+          }),
+        },
+        { provide: RECOVERY_CLOCK, useValue: () => new Date() },
+        {
+          provide: PasswordRecoveryService,
+          useFactory: (
+            database: DatabaseService,
+            delivery: PasswordRecoveryDelivery,
+            settings: RecoveryPolicySettings,
+            clock: () => Date,
+          ) => new PasswordRecoveryService(database.prisma, delivery, settings, clock),
+          inject: [DatabaseService, RECOVERY_DELIVERY, RECOVERY_POLICY_SETTINGS, RECOVERY_CLOCK],
+        },
         TrustedOriginGuard,
       ],
-      exports: [AuthService],
+      exports: [AuthService, PasswordRecoveryService, RECOVERY_DELIVERY],
     };
   }
 
   configure(consumer: MiddlewareConsumer): void {
-    consumer
-      .apply(uncacheableAuthentication)
-      .forRoutes(
-        { path: 'auth/login', method: RequestMethod.POST },
-        { path: 'auth/me', method: RequestMethod.GET },
-        { path: 'auth/logout', method: RequestMethod.POST },
-      );
+    consumer.apply(uncacheableAuthentication).forRoutes(
+      { path: 'auth/login', method: RequestMethod.POST },
+      { path: 'auth/me', method: RequestMethod.GET },
+      { path: 'auth/logout', method: RequestMethod.POST },
+      // Stage 2.5 recovery routes: uncacheable like every other authentication response.
+      { path: 'auth/password/forgot', method: RequestMethod.POST },
+      { path: 'auth/password/reset', method: RequestMethod.POST },
+    );
   }
 }

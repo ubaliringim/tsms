@@ -23,6 +23,10 @@ const PUBLIC_BODY: Record<AuthErrorCode, { statusCode: number; error: string }> 
   AUTHENTICATION_FAILED: { statusCode: HttpStatus.UNAUTHORIZED, error: 'authentication_failed' },
   INVALID_REQUEST: { statusCode: HttpStatus.BAD_REQUEST, error: 'invalid_request' },
   SERVICE_FAILURE: { statusCode: HttpStatus.SERVICE_UNAVAILABLE, error: 'service_unavailable' },
+  // One body for every unusable recovery token, so nothing distinguishes the cause.
+  RECOVERY_TOKEN_INVALID: { statusCode: HttpStatus.UNAUTHORIZED, error: 'recovery_token_invalid' },
+  // A policy rejection describes the submitted password only, never the account or the token.
+  INVALID_PASSWORD: { statusCode: HttpStatus.BAD_REQUEST, error: 'password_policy_violation' },
 };
 
 /**

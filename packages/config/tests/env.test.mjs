@@ -23,8 +23,58 @@ describe('server environment boundary', () => {
       API_PORT: 4000,
       ...valid,
       API_TRUSTED_ORIGINS: ['https://app.example.com', 'http://127.0.0.1:3000'],
+      // Stage 2.5: delivery is disabled by default, so recovery fails closed.
+      API_PASSWORD_RECOVERY_DELIVERY_MODE: 'disabled',
     });
     expect(parseWorkerEnvironment({ ...valid }).WORKER_HEALTH_PORT).toBe(4001);
+  });
+
+  it('defaults password recovery to disabled with no URL base', () => {
+    const parsed = parseApiEnvironment({ ...apiValid, NODE_ENV: 'production' });
+    expect(parsed.API_PASSWORD_RECOVERY_DELIVERY_MODE).toBe('disabled');
+    expect(parsed.API_PASSWORD_RECOVERY_URL_BASE).toBeUndefined();
+  });
+
+  it('refuses development-only recovery delivery in production', () => {
+    expect(() =>
+      parseApiEnvironment({
+        ...apiValid,
+        NODE_ENV: 'production',
+        API_PASSWORD_RECOVERY_DELIVERY_MODE: 'development-only',
+        API_PASSWORD_RECOVERY_URL_BASE: 'https://app.example.com/recover',
+      }),
+    ).toThrow('API_PASSWORD_RECOVERY_DELIVERY_MODE');
+  });
+
+  it('requires a recovery URL base when delivery is enabled', () => {
+    expect(() =>
+      parseApiEnvironment({ ...apiValid, API_PASSWORD_RECOVERY_DELIVERY_MODE: 'development-only' }),
+    ).toThrow('API_PASSWORD_RECOVERY_URL_BASE');
+    expect(
+      parseApiEnvironment({
+        ...apiValid,
+        API_PASSWORD_RECOVERY_DELIVERY_MODE: 'development-only',
+        API_PASSWORD_RECOVERY_URL_BASE: 'https://app.example.com/recover',
+      }).API_PASSWORD_RECOVERY_URL_BASE,
+    ).toBe('https://app.example.com/recover');
+  });
+
+  it('rejects a recovery URL base that could redirect a victim elsewhere', () => {
+    for (const API_PASSWORD_RECOVERY_URL_BASE of [
+      '/recover',
+      'https://*.example.com/recover',
+      'https://user:pass@app.example.com/recover',
+      'https://app.example.com/recover?next=https://evil.test',
+      'app.example.com/recover',
+    ]) {
+      expect(() =>
+        parseApiEnvironment({
+          ...apiValid,
+          API_PASSWORD_RECOVERY_DELIVERY_MODE: 'development-only',
+          API_PASSWORD_RECOVERY_URL_BASE,
+        }),
+      ).toThrow('API_PASSWORD_RECOVERY_URL_BASE');
+    }
   });
 
   it('requires a browser-origin allowlist for the API and never for the worker', () => {
@@ -92,6 +142,7 @@ describe('server environment boundary', () => {
       API_PORT: 4100,
       ...valid,
       API_TRUSTED_ORIGINS: ['https://app.example.com', 'http://127.0.0.1:3000'],
+      API_PASSWORD_RECOVERY_DELIVERY_MODE: 'disabled',
     });
   });
 

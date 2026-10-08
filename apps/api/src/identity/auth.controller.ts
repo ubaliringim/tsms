@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthError, AuthService, type PublicUserProfile } from './auth.service.js';
+import { PasswordRecoveryService } from './password-recovery.service.js';
 import {
   clearSessionCookie,
   cookieMaxAgeSeconds,
@@ -49,6 +50,19 @@ export interface CurrentUserBody {
 const JSON_CONTENT_TYPE = /^application\/json\s*(;.*)?$/i;
 
 /**
+ * The one body every password-recovery request receives - Stage 2.5.
+ *
+ * It states the outcome without asserting anything about the account, so it cannot become an
+ * enumeration oracle.
+ */
+export const RECOVERY_ACCEPTED_MESSAGE =
+  'If the account is eligible, password recovery instructions will be sent.';
+
+/** Bounded recovery input. Both fields are short, bounded strings; nothing else is accepted. */
+const MAX_RECOVERY_TOKEN_LENGTH = 128;
+const MAX_RECOVERY_EMAIL_LENGTH = 320;
+
+/**
  * HTTP transport for global identity authentication.
  *
  * The controller owns request parsing, cookie transport, and nothing else: credential
@@ -61,6 +75,7 @@ const JSON_CONTENT_TYPE = /^application\/json\s*(;.*)?$/i;
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
+    private readonly recovery: PasswordRecoveryService,
     @Inject(SESSION_COOKIE_POLICY) private readonly cookiePolicy: SessionCookiePolicy,
     @Inject(AUTH_CLOCK) private readonly now: () => Date,
   ) {}
@@ -132,6 +147,37 @@ export class AuthController {
   }
 
   /**
+   * Begin password recovery for an address - Stage 2.5.
+   *
+   * Always answers `202` with the same fixed body whether or not the account exists, is eligible, or
+   * a token was created. The raw token and the reset URL never reach the client.
+   */
+  @Post('password/forgot')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UseGuards(TrustedOriginGuard)
+  async forgotPassword(@Req() request: PlatformRequest, @Body() body: unknown): Promise<unknown> {
+    this.requireJson(request);
+    const { email } = this.readRecoveryRequest(body, ['email']);
+    await this.recovery.requestRecovery(email);
+    return { message: RECOVERY_ACCEPTED_MESSAGE };
+  }
+
+  /**
+   * Complete password recovery - Stage 2.5.
+   *
+   * Consumes the token, replaces the credential, supersedes other tokens, and revokes the user's
+   * sessions in one transaction. Sets no cookie and creates no session: the user must log in again.
+   */
+  @Post('password/reset')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(TrustedOriginGuard)
+  async resetPassword(@Req() request: PlatformRequest, @Body() body: unknown): Promise<void> {
+    this.requireJson(request);
+    const { token, newPassword } = this.readRecoveryRequest(body, ['token', 'newPassword']);
+    await this.recovery.resetPassword(token, newPassword);
+  }
+
+  /**
    * Require a JSON request.
    *
    * The body parser ignores a non-JSON content type, which would otherwise turn a wrong content
@@ -153,17 +199,56 @@ export class AuthController {
    * into a string, and no submitted value appears in the error.
    */
   private readLoginInput(body: unknown): { email: string; password: string } {
+    return this.readStrictStrings(body, ['email', 'password']) as {
+      email: string;
+      password: string;
+    };
+  }
+
+  /**
+   * Read a password-recovery body strictly - Stage 2.5.
+   *
+   * A malformed address is still forwarded to the service rather than rejected here, so a bad shape
+   * cannot be distinguished from an unknown account by status code.
+   */
+  private readRecoveryRequest(
+    body: unknown,
+    required: readonly ['email'] | readonly ['token', 'newPassword'],
+  ): Record<string, string> {
+    return this.readStrictStrings(body, required);
+  }
+
+  /**
+   * Require a plain object with exactly the named keys, every value a bounded string.
+   *
+   * Unknown keys are refused rather than ignored, so a client cannot believe a field was honoured.
+   * No value is coerced, and no submitted value appears in the error. Length is bounded before any
+   * further work so an oversized token cannot reach the digest or the policy check.
+   */
+  private readStrictStrings(body: unknown, required: readonly string[]): Record<string, string> {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       throw new AuthError('INVALID_REQUEST');
     }
     const keys = Object.keys(body);
-    if (keys.length !== 2 || !keys.includes('email') || !keys.includes('password')) {
+    if (keys.length !== required.length || !required.every((key) => keys.includes(key))) {
       throw new AuthError('INVALID_REQUEST');
     }
     const record = body as Record<string, unknown>;
-    if (typeof record['email'] !== 'string' || typeof record['password'] !== 'string') {
-      throw new AuthError('INVALID_REQUEST');
+    const result: Record<string, string> = {};
+    for (const key of required) {
+      const value = record[key];
+      if (typeof value !== 'string') throw new AuthError('INVALID_REQUEST');
+      const limit =
+        key === 'newPassword'
+          ? 0
+          : key === 'token'
+            ? MAX_RECOVERY_TOKEN_LENGTH
+            : MAX_RECOVERY_EMAIL_LENGTH;
+      // newPassword is bounded by the accepted policy and the 4 KiB body limit, not here: truncating
+      // or rejecting it at the transport would change the policy's own error taxonomy.
+      if (limit > 0 && value.length > limit) throw new AuthError('INVALID_REQUEST');
+      result[key] = value;
     }
-    return { email: record['email'], password: record['password'] };
+    return result;
   }
 }

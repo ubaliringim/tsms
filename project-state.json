@@ -15,12 +15,12 @@
     "acceptedAt": "2026-10-07",
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
-  "task": "2.4",
-  "status": "accepted_hosted_verified_closed",
-  "reviewStatus": "complete",
+  "task": "2.5",
+  "status": "in_progress_locally_validated",
+  "reviewStatus": "awaiting_owner_review",
   "nextTask": {
-    "id": "2.5",
-    "name": "Abuse protection and rate limiting",
+    "id": "2.6",
+    "name": "Rate limiting and abuse protection",
     "status": "not_started",
     "implementationAuthorized": false
   },
@@ -31,7 +31,7 @@
   },
   "blocked": false,
   "blockers": [],
-  "baselineCommit": "333ee77d26bc9b9a2d7d631bfbf2415d87f22232",
+  "baselineCommit": "514c859b1daa955cbc1d39b4984df62f7d0242da",
   "infrastructure": {
     "compose": "infrastructure/docker-compose.yml",
     "postgres": {
@@ -265,18 +265,17 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Stage 2.4 accepted and closed by the project owner. Documentation closure commit docs: close Stage 2.4 hosted validation covers exactly PROJECT_STATE.md, project-state.json and tasks/CURRENT.md.",
-  "nextAction": "Hard stop. Stage 2.4 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall NOT ACCEPTED; Stage 2.5 NOT STARTED / UNAUTHORIZED and requires separate owner authorization.",
+  "workingTree": "Stage 2.5 changes, including the resolved password-reset/session-creation race, are uncommitted, unstaged and unpushed pending owner review. HEAD and origin/main both remain at 514c859b1daa955cbc1d39b4984df62f7d0242da.",
+  "nextAction": "Owner reviews the Stage 2.5 password recovery implementation, the atomicity design, and the escalated session-creation race decision. Stage 2 overall NOT ACCEPTED; Stage 2.6 NOT STARTED / UNAUTHORIZED.",
   "doNot": [
-    "Start Stage 2.5 or later without explicit owner authorization",
-    "Expose the API to the public internet before Stage 2.6 rate limiting exists",
-    "Add registration, password reset, refresh tokens, logout-all, or rehash-on-login",
-    "Add tenant, school, membership, role, or permission behaviour",
-    "Enable credentialed CORS",
+    "Start Stage 2.6 or later without explicit owner authorization",
+    "Deploy to any public network",
+    "Add a real email provider without explicit authorization",
+    "Add a session-generation column without owner approval",
+    "Add registration, email verification, MFA, or password change",
     "Modify accepted schema or migrations",
     "Suppress or weaken the dependency audit",
-    "Mark the overall workflow green or either advisory resolved",
-    "Amend, force-push, or deploy"
+    "Commit, push, or deploy"
   ],
   "stageAcceptedAt": null,
   "acceptedBy": null,
@@ -325,7 +324,7 @@
     "specification": "Authentication & Identity Specification v1.0",
     "specificationApprovedBy": "Project owner",
     "acceptedSubstages": ["2.1", "2.2", "2.3", "2.4"],
-    "implementationScope": "2.1, 2.2, 2.3 and 2.4 accepted; 2.5 and later unauthorized"
+    "implementationScope": "2.1-2.4 accepted; 2.5 in progress; 2.6 and later unauthorized"
   },
   "postAcceptanceCIRepair": {
     "date": "2026-10-07",
@@ -472,20 +471,19 @@
     "note": "Acceptance does not resolve any dependency advisory. The two Stage 0 advisories remain installed and unresolved, and pnpm audit --audit-level=high remains failing."
   },
   "currentSubstage": {
-    "id": "2.4",
-    "name": "Login, Current User and Logout API",
-    "status": "accepted_hosted_verified_closed",
-    "accepted": true,
-    "acceptedBy": "Project owner",
-    "acceptedAt": "2026-10-08",
-    "acceptedCommit": "891af278313f68f385dbf6e405f9304347bb82bd",
-    "hostedRunId": 37747657210
+    "id": "2.5",
+    "name": "Secure Password Recovery",
+    "status": "in_progress_locally_validated",
+    "accepted": false,
+    "acceptedBy": null,
+    "acceptedAt": null,
+    "hostedVerified": false
   },
   "authorization": {
     "stage": "2",
     "specificationVersion": "1.0",
     "authorizedBy": "Project owner",
-    "scope": "2.4 Login, Current User and Logout API only",
+    "scope": "2.5 Secure Password Recovery only",
     "laterSubstagesAuthorized": false
   },
   "stage1ClosureValidation": {
@@ -920,7 +918,8 @@
     "2.2": "accepted_hosted_verified_closed",
     "2.3": "accepted_hosted_verified_closed",
     "2.4": "accepted_hosted_verified_closed",
-    "2.5": "not_started_unauthorized"
+    "2.5": "in_progress_locally_validated_not_accepted",
+    "2.6": "not_started_unauthorized"
   },
   "stage24": {
     "status": "closed_hosted_verification_complete",
@@ -1179,5 +1178,217 @@
       "previouslyDocumentedFollowUps": "preserved unchanged",
       "noResolutionsInvented": true
     }
+  },
+  "stage25": {
+    "status": "in_progress_locally_validated",
+    "accepted": false,
+    "hostedVerified": false,
+    "commit": null,
+    "contract": "docs/security/PASSWORD_RECOVERY.md",
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/auth/password/forgot",
+        "success": 202,
+        "failures": [400, 403, 413, 503]
+      },
+      {
+        "method": "POST",
+        "path": "/auth/password/reset",
+        "success": 204,
+        "failures": [400, 401, 403, 413]
+      }
+    ],
+    "schemaChangeRequired": false,
+    "schemaNote": "The accepted PasswordResetToken model already carries userId, unique tokenHash, expiresAt, usedAt and createdAt, which satisfies digest-only storage, fixed expiry, single use and supersession. No migration was added or modified.",
+    "files": [
+      "apps/api/src/identity/password-recovery-token.ts",
+      "apps/api/src/identity/password-recovery-delivery.ts",
+      "apps/api/src/identity/password-recovery.service.ts",
+      "apps/api/tests/password-recovery.test.mjs",
+      "apps/api/tests/password-recovery.integration.test.mjs",
+      "docs/security/PASSWORD_RECOVERY.md"
+    ],
+    "configurationAdded": {
+      "API_PASSWORD_RECOVERY_DELIVERY_MODE": "enum 'disabled' (default) or 'development-only'",
+      "API_PASSWORD_RECOVERY_URL_BASE": "optional absolute http(s) URL, required when delivery is enabled",
+      "wiredInto": [
+        "packages/config/src/env.ts",
+        ".env.example",
+        "local .env",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    "tokenPolicy": {
+      "entropyBits": 256,
+      "encoding": "canonical unpadded base64url, 43 characters",
+      "persistence": "SHA-256 lowercase hex digest only",
+      "lifetimeMs": 1800000,
+      "singleUse": true,
+      "supersedesEarlierTokens": true,
+      "expiryExtension": false,
+      "normalisation": "none",
+      "tokenInUrlFragmentNotQuery": true
+    },
+    "delivery": {
+      "interface": "PasswordRecoveryDelivery.sendRecoveryInstructions",
+      "realProviderAvailable": false,
+      "modes": {
+        "disabled": "Fails closed with 503 before any write. No token created, no email attempted.",
+        "development-only": "In-memory adapter. Records deliveries in process memory only; never writes to stdout, a logger, a file or the database. Refused by configuration when NODE_ENV=production."
+      },
+      "productionRecoveryUsable": false,
+      "productionNote": "No real mail provider is authorized, so API_PASSWORD_RECOVERY_DELIVERY_MODE=development-only is rejected at startup under NODE_ENV=production and password recovery is unavailable in production. Enabling it for production requires a code change and owner authorization."
+    },
+    "atomicity": {
+      "transaction": "Single prisma.$transaction covering all security-sensitive writes.",
+      "order": [
+        "per-user advisory lock (pg_advisory_xact_lock on a hash of the user id)",
+        "conditional token consumption matching only an unused, unexpired row",
+        "credential replacement by compare-and-swap on digest and passwordChangedAt",
+        "supersession of other outstanding tokens",
+        "revocation of every unrevoked, unexpired session"
+      ],
+      "argon2OutsideTransaction": "Hashing runs before the transaction opens so no connection is held across a 64 MiB allocation. A token that loses the race after hashing has written nothing.",
+      "partialWritePossible": false,
+      "concurrentRedemption": "Exactly one winner; the loser receives the generic invalid-token failure."
+    },
+    "sessionRevocation": {
+      "status": "closed_by_shared_per_user_advisory_lock",
+      "raceRootCause": "SessionService.createSession inserted a session with no coordination, while reset replaced the credential and revoked sessions inside a transaction. A login that had already verified the old password could insert after the reset revocation statement, leaving a session authorised by a password that no longer existed.",
+      "invariant": "A login authenticated with a password that a completed reset replaced must not create a usable session after that reset.",
+      "protocol": {
+        "lock": "pg_advisory_xact_lock(hashtextextended(user_id, 0)), transaction-scoped, taken on the same transaction client that performs the protected writes",
+        "resetOrder": [
+          "lock",
+          "consume token",
+          "replace credential",
+          "supersede other tokens",
+          "revoke sessions",
+          "commit"
+        ],
+        "loginOrder": [
+          "verify password outside the lock",
+          "lock",
+          "revalidate credential version in lock",
+          "insert session",
+          "commit"
+        ],
+        "argon2OutsideLock": "Deliberate. A 64 MiB three-iteration allocation must not run while holding the lock and must not serialise concurrent logins for one user.",
+        "revalidation": "The login re-reads passwordChangedAt under the lock and refuses if it differs from the value observed at verification. Every replacement advances it strictly, so a change is unambiguous. The digest is never returned to the caller.",
+        "processLocalMutexUsed": false,
+        "schemaColumnIntroduced": false,
+        "migrationAdded": false
+      },
+      "guarantees": [
+        "Login commits before the reset: the reset revokes the session the login created.",
+        "Reset commits before the login: the login observes the advanced credential version and refuses with the generic authentication failure.",
+        "Either mid-transaction: the advisory lock forces one of those two orders.",
+        "Concurrent valid logins are serialised but all admitted, each with a distinct session.",
+        "Concurrent resets yield exactly one winner with no partial application.",
+        "A disabled account is rejected during the in-lock revalidation.",
+        "An aborted transaction rolls back the entire reset and releases the lock."
+      ],
+      "doesNotGuarantee": [
+        "It does not cancel an HTTP request that was already authorized; revocation only affects subsequent validation.",
+        "It does not order recovery issuance against login, which is unnecessary because issuance never touches the credential.",
+        "It does not add any schema column."
+      ],
+      "evidence": {
+        "suite": "apps/api/tests/password-recovery-race.integration.test.mjs",
+        "coordination": "Explicit latch parked at the seam between password verification and session insertion. No sleeps and no timing assumptions.",
+        "criticalTest": "Asserts the stale login rejects with AUTHENTICATION_FAILED and that zero session rows exist for that user.",
+        "negativeControl": "Temporarily disabling both the advisory lock and the in-lock revalidation makes the critical test fail, with the login resolving successfully. The test detects the vulnerability rather than passing vacuously.",
+        "repeatRuns": "21 passed on three consecutive runs with identical results.",
+        "casesCovered": [
+          "login verified before reset, insert delayed until after reset",
+          "reset commits before a previously started login inserts",
+          "concurrent valid logins",
+          "concurrent password resets",
+          "login against a disabled account",
+          "reset racing account disable",
+          "failed transaction rollback",
+          "no cross-user session revocation",
+          "no deadlocks or lock leaks, including after an aborted transaction on a second connection",
+          "login and reset coordinated across two independent connection pools"
+        ]
+      },
+      "remainingArchitecturalLimitations": [
+        "Concurrent logins for one user serialise on the advisory lock for the duration of the in-transaction revalidation and insert. That section performs no Argon2id work, so the window is short, but it is a per-user serialisation point.",
+        "The lock is advisory, so it coordinates only writers that take it. Any future session-creation path must also participate; the single existing production path is covered and asserted by a regression test."
+      ]
+    },
+    "enumerationResistance": {
+      "indistinguishableConditions": [
+        "unknown_email",
+        "disabled_user",
+        "missing_password_credential"
+      ],
+      "identicalStatus": 202,
+      "identicalBody": "If the account is eligible, password recovery instructions will be sent.",
+      "ineligiblePathWork": "Runs a real Argon2id verification against the Stage 2.4 decoy digest.",
+      "constantTimeClaim": false,
+      "note": "Not a constant-time claim. The eligible path additionally writes a row and performs delivery work; repeated sampling can separate the two."
+    },
+    "explicitlyNotImplemented": [
+      "account registration or signup",
+      "email verification",
+      "multi-factor authentication",
+      "password change while authenticated",
+      "a real email delivery provider",
+      "rate limiting or abuse protection",
+      "AuthenticationEvent recording",
+      "session issuance during recovery",
+      "a session-generation column"
+    ],
+    "abuseRisks": [
+      "Recovery email flooding against a known address, since issuance is unbounded.",
+      "Token brute force, bounded only by 256-bit entropy and the 30-minute lifetime.",
+      "Argon2id resource exhaustion: both endpoints can trigger a 64 MiB operation and neither is throttled. This is the most direct availability risk in the stage.",
+      "Token-request abuse used to invalidate a victim outstanding recovery token, since each issuance supersedes earlier ones.",
+      "No delivery provider, so in production the workflow fails closed rather than sending anything."
+    ],
+    "deploymentBlocker": "Public deployment remains prohibited. Stage 2.6 owns rate limiting; no approved rate limiter exists to reuse in this stage.",
+    "validation": {
+      "frozenInstall": "pass",
+      "prismaGenerate": "pass",
+      "formatCheck": "pass",
+      "lint": "pass",
+      "typecheck": "pass_11_tasks",
+      "test": "pass_135_unit_toolchain",
+      "unitTests": 135,
+      "unitBreakdown": {
+        "config": 26,
+        "redis": 4,
+        "database": 8,
+        "worker": 4,
+        "api": 96,
+        "nodeToolchain": 1
+      },
+      "focusedRecoveryUnitTests": 23,
+      "build": "pass_7_tasks",
+      "check": "pass_with_applicable_Turbo_cache",
+      "integrationTests": "pass_187_cases_zero_skipped",
+      "integrationTestCount": 208,
+      "apiIntegrationTests": 165,
+      "focusedRecoveryIntegrationTests": 74,
+      "smoke": "pass_19_assertions",
+      "mobileCompatibility": "pass",
+      "mobileExport": "pass_android_578_modules",
+      "diffCheck": "pass",
+      "dependencyAudit": "expected_fail_exactly_two_known_high_no_new_findings",
+      "hostedCI": "not_run_no_commit",
+      "concurrentRaceTests": 21
+    },
+    "unchanged": [
+      "accepted schema and migrations",
+      "dependencies and lockfile",
+      "dependency audit policy",
+      "Stage 2.2 password policy and Argon2id parameters",
+      "Stage 2.3 session primitive",
+      "Stage 2.4 endpoints, cookie policy and origin guard",
+      "health and readiness contracts",
+      "test-database safety guards"
+    ]
   }
 }

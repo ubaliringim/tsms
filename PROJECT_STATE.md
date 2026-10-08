@@ -16,7 +16,7 @@ Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Next substage: 2.5 - Abuse protection and rate limiting. NOT STARTED / UNAUTHORIZED.
+Next substage: 2.6 - Rate limiting and abuse protection. NOT STARTED / UNAUTHORIZED.
 
 Accepted capabilities: PostgreSQL local infrastructure, Redis local infrastructure, pgvector extension foundation, Prisma 7 database foundation, packages/database, packages/redis, migration workflow, database and Redis lifecycle handling, API and worker liveness/readiness separation, integration-test infrastructure, test-database safety controls, Docker Compose workflow, fresh-state reproducibility, the Stage 1 CI workflow, the three Prisma dependency security remediations, the temporary InfrastructureProbe scaffolding, and the smoke-test readiness extensions. The Stage 1 known issues were reviewed and accepted as non-blocking.
 
@@ -42,11 +42,13 @@ Stage 2.3 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-0
 
 Stage 2.4 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Implementation commit `891af278313f68f385dbf6e405f9304347bb82bd` (`feat: add HTTP authentication endpoints`); hosted run [37747657210](https://github.com/ubaliringim/tsms/actions/runs/37747657210). Record at tasks/CURRENT.md and docs/security/AUTH_API.md.
 
-Next substage: 2.5 - Abuse protection and rate limiting. NOT STARTED / UNAUTHORIZED.
+Stage 2.5 status: IN PROGRESS / LOCALLY VALIDATED; NOT ACCEPTED, not committed, not pushed, not deployed. Current substage. Record at tasks/CURRENT.md and docs/security/PASSWORD_RECOVERY.md.
 
-Exact next action: hard stop. Stage 2.4 documentation closure was the only authorized remaining work.
+Next substage: 2.6 - Rate limiting and abuse protection. NOT STARTED / UNAUTHORIZED.
 
-DO NOT: start Stage 2.5 or later, add registration/reset/refresh/logout-all/rate limiting, add tenant or RBAC behaviour, enable credentialed CORS, change accepted schema/migrations, weaken audits, amend, force-push, commit, push, or deploy without explicit authorization.
+Exact next action: owner reviews the Stage 2.5 implementation, the atomicity design, and the escalated session-creation race decision. Changes remain uncommitted.
+
+DO NOT: start Stage 2.6 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken audits, commit, push, or deploy without explicit authorization.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -260,3 +262,57 @@ Stage 0: ACCEPTED. Stage 1: ACCEPTED. Stage 2.1: ACCEPTED / HOSTED VERIFIED / CL
 ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.3: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.4:
 ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall: NOT ACCEPTED. Stage 2.5: NOT STARTED /
 UNAUTHORIZED. **HARD STOP.**
+
+## Stage 2.5 secure password recovery - 2026-10-08
+
+The owner authorized Stage 2.5 only. Two endpoints now recover access for an existing global user:
+`POST /auth/password/forgot` and `POST /auth/password/reset`. The accepted contract is
+docs/security/PASSWORD_RECOVERY.md. No registration, no tenant or school concept, no authorization,
+and no session is issued by recovery.
+
+The accepted `PasswordResetToken` model already carried `userId`, unique `tokenHash`, `expiresAt`,
+`usedAt`, and `createdAt`, which satisfies digest-only storage, a fixed lifetime, single use, and
+supersession. **No schema change and no migration were added or modified.** Tokens are 32 random
+bytes, canonical 43-character base64url, stored as a SHA-256 digest, expiring after a fixed 30
+minutes with no extension. The reset link carries the token in the URL fragment, never the query
+string, so it cannot reach a server access log or a `Referer`.
+
+Atomicity is the core of this stage. One `prisma.$transaction` performs a per-user advisory lock, a
+conditional consumption update that matches only an unused and unexpired row, a compare-and-swap
+credential replacement, supersession of other outstanding tokens, and revocation of every live
+session. A failure at any step rolls the whole thing back, so a caller can never end up with a
+consumed token and an unchanged password, or a new password with live sessions. Argon2id hashing
+happens before the transaction opens so no connection is held across a 64 MiB allocation. Two
+concurrent redemptions of one token yield exactly one `204` and one generic failure.
+
+**The password-reset / session-creation race is now closed.** SessionService.createSession had inserted with no coordination, so a login could verify the old password, let a reset complete, and then insert a session authorised by a password that no longer existed - resetting a compromised password did not evict the attacker. Login and reset now take the same transaction-scoped advisory lock, pg_advisory_xact_lock(hashtextextended(user_id, 0)), on the same transaction client that performs their protected writes, and the login revalidates the credential version under that lock. Argon2id stays outside the lock so a 64 MiB allocation is never held under it. Either ordering is now safe: a login that commits first has its session revoked by the reset, and a reset that commits first makes the login observe the advanced version and refuse. No schema column and no migration were added, and no process-local mutex was used. The invariant is proven by 21 real-PostgreSQL concurrency tests using an explicit latch rather than sleeps, including a negative control in which disabling the lock and the revalidation makes the critical test fail with the login succeeding.
+
+Delivery is explicit configuration with no real provider. `API_PASSWORD_RECOVERY_DELIVERY_MODE`
+defaults to `disabled`, which fails both endpoints closed with `503` before any write, so no token is
+created and no email is attempted. `development-only` uses an in-memory adapter that never writes to
+stdout, a logger, a file, or the database, and configuration validation refuses it when
+`NODE_ENV=production`. **Real delivery is not available and password recovery is therefore not usable
+in production.**
+
+Issuance is enumeration-resistant: unknown address, disabled account, and missing credential return a
+byte-identical `202` and perform no write, while still paying a real Argon2id verification against the
+Stage 2.4 decoy digest. This is explicitly not a constant-time claim.
+
+Public deployment remains prohibited. Stage 2.5 adds unmitigated abuse risk - recovery email flooding,
+token brute force, and especially Argon2id resource exhaustion, since both endpoints can trigger a
+64 MiB operation with no throttle. Stage 2.6 owns the fix and no approved rate limiter exists to
+reuse.
+
+Local validation passed with no dependency, lockfile, schema, migration, or accepted-document change:
+frozen install, Prisma generation, formatting, lint, typecheck across 11 tasks, 135 unit/toolchain
+tests, builds across 7 tasks, the aggregate check, 208 integration tests, 19 smoke assertions, mobile
+dependency check, Android export, and `git diff --check`. `pnpm audit --audit-level=high` still fails
+on exactly the two accepted high advisories with no new finding.
+
+One accepted test was updated: the Stage 2.4 scope regression asserted that the two recovery routes
+return `404`, which was correct when recovery did not exist and is superseded now that Stage 2.5
+authorizes them. Registration, session-listing, revoke-all, tenant, and refresh routes remain asserted
+absent, and the recovery routes are covered by the new suite instead.
+
+Changes are uncommitted, unstaged, and unpushed. **HARD STOP: Stage 2.6 is NOT STARTED /
+UNAUTHORIZED.**

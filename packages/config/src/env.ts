@@ -98,14 +98,76 @@ const apiTrustedOrigins = z
   })
   .transform((value) => parseTrustedOrigins(value) as string[]);
 
-const apiSchema = z.object({
-  NODE_ENV: mode,
-  API_HOST: host,
-  API_PORT: port('4000'),
-  DATABASE_URL: databaseUrl,
-  REDIS_URL: redisUrl,
-  API_TRUSTED_ORIGINS: apiTrustedOrigins,
-});
+/**
+ * Base URL that password-recovery links are built from - Stage 2.5.
+ *
+ * The recovery URL is emailed to the account owner, so a value derived from a request header would
+ * let an attacker point a victim at a host they control. This must come from validated configuration.
+ * Only an absolute http or https URL with no credentials, query, or fragment is accepted, and the
+ * wildcard host characters rejected for origins are rejected here too.
+ */
+const passwordRecoveryUrlBase = z
+  .string()
+  .min(1)
+  .refine((value) => {
+    const parsed = parseUrl(value);
+    return (
+      parsed !== null &&
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      parsed.host !== '' &&
+      parsed.username === '' &&
+      parsed.password === '' &&
+      parsed.search === '' &&
+      parsed.hash === '' &&
+      !/[*,\s]/.test(parsed.host)
+    );
+  }, 'must be an absolute http or https URL without credentials, query, or fragment');
+
+/**
+ * Delivery availability for password recovery - Stage 2.5.
+ *
+ * No real mail provider is authorized, so delivery is explicit rather than an implicit default.
+ * `disabled` is the default and fails the recovery endpoints closed. `development-only` uses the
+ * in-memory adapter and is refused outright under production, so the public recovery workflow cannot
+ * be enabled without real delivery by changing an environment variable alone.
+ */
+const passwordRecoveryDeliveryMode = z.enum(['disabled', 'development-only']);
+
+const apiSchema = z
+  .object({
+    NODE_ENV: mode,
+    API_HOST: host,
+    API_PORT: port('4000'),
+    DATABASE_URL: databaseUrl,
+    REDIS_URL: redisUrl,
+    API_TRUSTED_ORIGINS: apiTrustedOrigins,
+    API_PASSWORD_RECOVERY_URL_BASE: passwordRecoveryUrlBase.optional(),
+    API_PASSWORD_RECOVERY_DELIVERY_MODE: passwordRecoveryDeliveryMode.default('disabled'),
+  })
+  // A recovery URL is only meaningful when something can deliver it, and delivery in production
+  // needs a real provider this stage does not have. Both are startup failures, not runtime surprises.
+  .superRefine((value, context) => {
+    if (
+      value.API_PASSWORD_RECOVERY_DELIVERY_MODE !== 'disabled' &&
+      !value.API_PASSWORD_RECOVERY_URL_BASE
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['API_PASSWORD_RECOVERY_URL_BASE'],
+        message: 'is required when delivery mode is enabled',
+      });
+    }
+    if (
+      value.NODE_ENV === 'production' &&
+      value.API_PASSWORD_RECOVERY_DELIVERY_MODE === 'development-only'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['API_PASSWORD_RECOVERY_DELIVERY_MODE'],
+        message: 'may not be development-only in production',
+      });
+    }
+  });
 const workerSchema = z.object({
   NODE_ENV: mode,
   WORKER_HOST: host,

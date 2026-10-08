@@ -590,12 +590,13 @@ describe('response transport security', () => {
 });
 
 describe('Stage 2.4 scope regression', () => {
-  it('exposes no registration, recovery, session-management, or revocation routes', async () => {
+  it('exposes no registration, session-management, or revocation routes', async () => {
+    // Stage 2.5 adds /auth/password/forgot and /auth/password/reset, so those are no longer
+    // expected to 404 here; password-recovery.integration.test.mjs covers them instead.
     const routes = [
       ['POST', '/auth/register'],
       ['POST', '/auth/signup'],
-      ['POST', '/auth/password/forgot'],
-      ['POST', '/auth/password/reset'],
+      ['POST', '/auth/password/change'],
       ['GET', '/auth/sessions'],
       ['POST', '/auth/logout-all'],
       ['POST', '/auth/revoke-all'],

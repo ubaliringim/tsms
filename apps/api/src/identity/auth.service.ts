@@ -1,11 +1,22 @@
 import type { PrismaClient } from '@tsms/database';
-import { PasswordCredentialService } from './password-credential.service.js';
+import { PasswordCredentialService, fingerprintOf } from './password-credential.service.js';
 import { PasswordCredentialError } from './password-error.js';
-import { verifyPassword, type PasswordVerification } from './password-hasher.js';
+import { verifyPassword } from './password-hasher.js';
 import { SessionService } from './session.service.js';
 import { SessionError } from './session-error.js';
+import { lockUserSessionMutations } from './user-session-lock.js';
 
-export type AuthErrorCode = 'AUTHENTICATION_FAILED' | 'INVALID_REQUEST' | 'SERVICE_FAILURE';
+export type AuthErrorCode =
+  | 'AUTHENTICATION_FAILED'
+  | 'INVALID_REQUEST'
+  | 'SERVICE_FAILURE'
+  /**
+   * Every unusable recovery token - unknown, expired, consumed, superseded, or belonging to a
+   * disabled account - collapses to this one code. Stage 2.5.
+   */
+  | 'RECOVERY_TOKEN_INVALID'
+  /** The submitted new password violates the accepted Stage 2.2 policy. Stage 2.5. */
+  | 'INVALID_PASSWORD';
 
 /**
  * The only error this layer raises. HTTP translation lives in the exception filter, so the
@@ -99,10 +110,17 @@ export class AuthService {
       select: { ...profileFields, status: true },
     });
 
-    let verification: PasswordVerification | null = null;
+    let verified: { matches: boolean; version: number; fingerprint: string } | null = null;
     if (user !== null && user.status === 'ACTIVE') {
       try {
-        verification = await this.credentials.verifyCredential(user.id, password);
+        const outcome = await this.credentials.verifyCredentialVersioned(user.id, password);
+        if (outcome.verification.matches) {
+          verified = {
+            matches: true,
+            version: outcome.version,
+            fingerprint: outcome.fingerprint,
+          };
+        }
       } catch (error) {
         // A missing credential is an authentication outcome. Anything else - a storage or
         // driver failure - is operational and must stay distinguishable from "wrong password".
@@ -112,34 +130,96 @@ export class AuthService {
       }
     }
 
-    if (verification === null) {
+    if (verified === null || user === null) {
       // Unknown address, disabled account, or no credential record. Pay the real verification
       // cost anyway so duration does not become an account-existence oracle.
       await this.burnVerification(password);
       throw new AuthError('AUTHENTICATION_FAILED');
     }
-    if (!verification.matches || user === null) throw new AuthError('AUTHENTICATION_FAILED');
 
-    let created: { token: string; sessionId: string; expiresAt: Date };
+    return this.createSessionUnderLock(user, verified);
+  }
+
+  /**
+   * Insert the session while holding the per-user session-mutation lock.
+   *
+   * Stage 2.5. Password verification already happened, and deliberately outside this transaction so
+   * the 64 MiB Argon2id allocation never runs while the lock is held. The consequence is that a
+   * password reset could replace the credential in between, which would leave this login about to
+   * authorise a session using a password that no longer exists.
+   *
+   * So the lock is taken on this transaction, the credential version observed at verification time is
+   * re-read under it, and a changed version aborts with the same generic failure a wrong password
+   * produces. The reset takes the identical lock, so the two are strictly ordered:
+   *
+   *   login commits first  -> the reset revokes the session it just created
+   *   reset commits first  -> the login sees the advanced version and refuses to insert
+   *
+   * The lock is a transaction-scoped advisory lock, released automatically on commit or rollback,
+   * and it is taken on the same client that performs the insert.
+   */
+  private async createSessionUnderLock(
+    user: { id: string; email: string; displayName: string },
+    verified: { version: number; fingerprint: string },
+  ): Promise<LoginResult> {
     try {
-      created = await this.sessions.createSession(user.id);
+      const created = await this.database.$transaction(async (tx) => {
+        await lockUserSessionMutations(tx, user.id);
+
+        // In-lock revalidation: the account must still be usable, and the credential must be the
+        // exact state the password was verified against.
+        //
+        // Both signals are compared. `passwordChangedAt` catches ordinary replacements, and the
+        // digest fingerprint is authoritative: a credential row replaced with a different digest but
+        // a recycled timestamp would pass a timestamp-only check, which is why it is not trusted
+        // alone. The digest itself is never read here, only a one-way hash of it.
+        const current = await tx.user.findUnique({
+          where: { id: user.id },
+          select: {
+            status: true,
+            id: true,
+            email: true,
+            displayName: true,
+            passwordCredential: {
+              select: { passwordHash: true, passwordChangedAt: true },
+            },
+          },
+        });
+        if (current === null || current.status !== 'ACTIVE') {
+          throw new AuthError('AUTHENTICATION_FAILED');
+        }
+        const credential = current.passwordCredential;
+        if (
+          credential === null ||
+          credential.passwordChangedAt.getTime() !== verified.version ||
+          fingerprintOf(credential.passwordHash) !== verified.fingerprint
+        ) {
+          // The credential changed after this password was verified, so the verification no longer
+          // proves anything. Indistinguishable from a wrong password to the caller.
+          throw new AuthError('AUTHENTICATION_FAILED');
+        }
+
+        return await this.sessions.createSessionInTransaction(tx, user.id);
+      });
+
+      return {
+        user: { id: user.id, email: user.email, displayName: user.displayName },
+        ...created,
+      };
     } catch (error) {
-      // createSession re-reads current status, so an account disabled between the password check
-      // and session creation lands here. That is still a plain authentication failure.
-      if (
-        error instanceof SessionError &&
-        (error.code === 'USER_DISABLED' || error.code === 'USER_NOT_FOUND')
-      ) {
-        throw new AuthError('AUTHENTICATION_FAILED');
+      if (error instanceof AuthError) throw error;
+      if (error instanceof SessionError) {
+        if (
+          error.code === 'USER_DISABLED' ||
+          error.code === 'USER_NOT_FOUND' ||
+          error.code === 'INVALID_INPUT'
+        ) {
+          throw new AuthError('AUTHENTICATION_FAILED');
+        }
+        throw new AuthError('SERVICE_FAILURE');
       }
       throw new AuthError('SERVICE_FAILURE');
     }
-
-    return {
-      user: { id: user.id, email: user.email, displayName: user.displayName },
-      token: created.token,
-      expiresAt: created.expiresAt,
-    };
   }
 
   /**

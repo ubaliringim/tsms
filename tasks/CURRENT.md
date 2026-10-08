@@ -1,109 +1,177 @@
-# Current task: Stage 2.4 - Login, Current User and Logout API
+# Current task: Stage 2.5 - Secure Password Recovery
 
 Owner: TeamStack Technologies LTD
 
-Stage 0 and Stage 1: ACCEPTED. Stages 2.1, 2.2 and 2.3: ACCEPTED / HOSTED VERIFIED / CLOSED.
-Stage 2.4: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08).
-Stage 2 overall: NOT ACCEPTED. Stage 2.5 and later: NOT STARTED / UNAUTHORIZED.
+Stage 0 and Stage 1: ACCEPTED. Stages 2.1, 2.2, 2.3 and 2.4: ACCEPTED / HOSTED VERIFIED / CLOSED.
+Stage 2.5: IN PROGRESS / LOCALLY VALIDATED; NOT ACCEPTED, NOT COMMITTED, NOT PUSHED.
+Stage 2 overall: NOT ACCEPTED. Stage 2.6 and later: NOT STARTED / UNAUTHORIZED.
 
 ## Starting state
 
-Work started on main at 6df160a5cdd161793ce43ad0fae34235c999a84f (`docs: close Stage 2.3 hosted
-validation`), matching origin/main with a clean working tree. No prior agent's uncommitted work
-existed and none was discarded. Preserved prior handoffs: tasks/completed/stage-0-engineering-foundation.md,
-tasks/completed/stage-1-database-and-local-infrastructure.md, tasks/completed/stage-2-1-identity.md,
-tasks/completed/stage-2-2-password-credentials.md, and the Stage 1 hosted CI repair.
+Work started on main at `514c859b1daa955cbc1d39b4984df62f7d0242da`
+(`docs: close Stage 2.4 hosted validation`), matching origin/main with a clean working tree. No prior
+agent's uncommitted work existed and none was discarded.
 
 ## API contract
 
-[docs/security/AUTH_API.md](../docs/security/AUTH_API.md) is the accepted-shape reference.
-[docs/architecture/SECURITY.md](../docs/architecture/SECURITY.md) records the stage boundary.
+[docs/security/PASSWORD_RECOVERY.md](../docs/security/PASSWORD_RECOVERY.md) is the accepted-shape
+reference.
 
-| Method | Path           | Success | Failures                                           |
-| ------ | -------------- | ------- | -------------------------------------------------- |
-| POST   | `/auth/login`  | 200     | 400 malformed, 401 auth, 403 origin, 413 too large |
-| GET    | `/auth/me`     | 200     | 401 unauthenticated                                |
-| POST   | `/auth/logout` | 204     | 403 origin                                         |
+| Method | Path                    | Success | Failures                                                        |
+| ------ | ----------------------- | ------- | --------------------------------------------------------------- |
+| POST   | `/auth/password/forgot` | 202     | 400 malformed, 403 origin, 413 too large, 503 delivery disabled |
+| POST   | `/auth/password/reset`  | 204     | 400 malformed/policy, 401 token, 403 origin, 413 too large      |
 
-Login accepts `application/json` with exactly `{ email, password }`, both strings, and returns
-`{ "user": { id, email, displayName } }`. The opaque token is returned only in `Set-Cookie`.
-`/auth/me` returns the same minimal profile from the session cookie. `/auth/logout` revokes the
-presented session, clears the cookie, and always answers 204 with an empty body.
+`forgot` accepts exactly `{ email }` and always answers the same body: "If the account is eligible,
+password recovery instructions will be sent." It never returns the token or the reset URL. `reset`
+accepts exactly `{ token, newPassword }`, returns an empty `204`, sets no cookie, and creates no
+session. Both reuse the Stage 2.4 origin guard, strict JSON validation, 4 KiB limit, and
+`Cache-Control: no-store` with `Vary: Origin`.
 
-Every authentication failure is one fixed body, `{ "statusCode": 401, "error": "authentication_failed" }`,
-covering unknown email, wrong password, absent credential, and disabled account identically.
+## Recovery token lifecycle
 
-## Architecture and responsibilities
+32 random bytes from `crypto.randomBytes`, canonical unpadded base64url of exactly 43 characters.
+Only the SHA-256 digest is persisted. Fixed 30-minute expiry, never extended. Single use: consumption
+is a conditional update matching only an unused, unexpired row. Issuing supersedes every earlier
+outstanding token for that user. No normalisation or trimming. The reset link places the token in the
+URL fragment, not the query string.
 
-- `auth.service.ts` orders the operations and owns the failure taxonomy. It is HTTP-agnostic.
-- `auth.controller.ts` is transport only: JSON content type, strict body shape, cookie I/O.
-- `PasswordCredentialService` (Stage 2.2, unchanged) verifies the password.
-- `SessionService` (Stage 2.3, unchanged) creates, validates, and revokes the session.
-- `DatabaseService` supplies the one process-owned Prisma client; no second connection.
-- `trusted-origin.guard.ts` is the CSRF admission check on the two state-changing routes.
-- `auth-body-limit.ts` rejects an oversized declared body before parsing.
-- `auth-exception.filter.ts` replaces malformed-request and oversized-body errors with fixed bodies.
+`PasswordResetToken` already carried `userId`, unique `tokenHash`, `expiresAt`, `usedAt`, and
+`createdAt`, so **no schema or migration change was required or made**.
 
-`api_TRUSTED_ORIGINS` is a new required startup-validated value. It is wired into the config
-package, turbo `globalEnv`, `.env.example`, the local `.env`, CI, and the smoke script. It is
-required in **every** environment including production: an absent allowlist is a fail-closed API.
+## Delivery design and production limitations
 
-## Security decisions
+`PasswordRecoveryDelivery.sendRecoveryInstructions(...)` is an internal port taking only recipient,
+display name, raw token, reset URL, and expiry. There is no SMTP credential, no provider SDK, and no
+public email service.
 
-**Origin and CSRF.** Login and logout require an `Origin` matching the allowlist by exact string
-equality. No trusted value is derived from `Host`, `X-Forwarded-Host`, `X-Forwarded-Proto`, or
-`Referer`. A missing `Origin` is a 403 rather than a pass: browsers attach `Origin` to every POST,
-so requiring it costs real clients nothing while closing the anonymous-client gap. `SameSite=Lax`
-and the `Origin` check are defence in depth. `GET /auth/me` is unguarded because it is safe and
-requiring `Origin` would break direct navigation.
+| Mode                 | Behaviour                                                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `disabled` (default) | Both endpoints fail closed with `503` **before any write**. No token, no email attempt.                              |
+| `development-only`   | In-memory adapter. Permitted only when `NODE_ENV` is `development` or `test`; refused at startup under `production`. |
 
-**Enumeration resistance.** Failed paths run Argon2id against a committed decoy digest with
-production parameters (64 MiB, t=3, p=1) so they cost what success costs. The decoy was generated
-from a random 32-byte string that is not stored anywhere; it corresponds to no account, and the test
-suite confirms it verifies no real test password. This is explicitly **not** a constant-time claim:
-`verifyPassword` short-circuits before Argon2 for a policy-invalid candidate (symmetrically on both
-paths), database round trips are not equalised, and there is no throttling.
+The reset URL is built from `API_PASSWORD_RECOVERY_URL_BASE`, a startup-validated absolute URL.
+Credentials, wildcards, non-absolute values, query strings, and fragments are rejected. It is never
+derived from `Host`, `X-Forwarded-Host`, `X-Forwarded-Proto`, or `Referer`.
 
-**Cookies.** `__Host-tsms_session` + `Secure` in production; `tsms_session` on loopback HTTP in
-development and test. Attributes are derived from validated `NODE_ENV`, so no configuration can
-disable `Secure` in production. Always `HttpOnly`, `SameSite=Lax`, `Path=/`, never `Domain`.
-`Max-Age` is bounded by the session's own absolute expiry. A duplicated cookie is rejected as
-unauthenticated rather than resolved by occurrence order. Cookie values are parsed directly; no
-parsing dependency was added.
+The development adapter records deliveries **in process memory only**. It writes nothing to stdout, a
+logger, a file, or the database, because a token must never reach an operational channel. A unit test
+asserts that console output stays empty during delivery.
 
-**Logging and errors.** The bearer secret never enters a body, URL, header other than `Set-Cookie`,
-or log. Driver messages, Prisma codes, Argon2id failures, and stack traces are never returned.
-Malformed-JSON parser messages, which quote the submitted fragment, are replaced wholesale. The
-filter deliberately does not log.
+**Real delivery is not available.** Password recovery is not usable in production, and the endpoints
+fail closed there. Enabling it for production requires a code change plus owner authorization, not
+just an environment variable.
 
-**CORS.** Credentialed CORS is not enabled and no CORS header is emitted, so a browser will not
-expose a cross-origin response. The contract is same-origin only; wiring web/control on ports
-3000/3001 needs a later explicit allowlist decision.
+## Atomicity and concurrency model
 
-**Body limit.** 4 KiB, enforced twice: an explicit pre-parse `Content-Length` check for a
-deterministic 413, and the adapter parser limit for a chunked or understated body.
+One `prisma.$transaction`, in order: per-user advisory lock (`pg_advisory_xact_lock` on a hash of the
+user id) → conditional token consumption → compare-and-swap credential replacement → supersession of
+other outstanding tokens → revocation of every unrevoked unexpired session. Any failure rolls back
+everything, so a consumed token always implies a replaced password and revoked sessions.
+
+Argon2id hashing runs **before** the transaction opens, so no connection is held across a 64 MiB
+allocation. A token that loses the race after hashing has written nothing.
+
+| Race                              | Outcome                                                                            |
+| --------------------------------- | ---------------------------------------------------------------------------------- |
+| Two redemptions of one token      | Exactly one `204`; the other gets the generic `401`.                               |
+| Two different resets, one user    | Serialised by the advisory lock; both may succeed, the second password wins.       |
+| Reset versus issuance             | Both orders are safe; a reset may lose to a supersede and get the generic failure. |
+| Reset versus disabling            | Eligibility is re-checked under the lock, so a disabled user gets no new password. |
+| Reset versus logout/revoke-all    | Both are conditional writes on `revokedAt`; the union is correct.                  |
+| **Reset versus session creation** | **Not fully closed. Escalated below.**                                             |
+
+## Resolved blocker: the session-creation race
+
+### Root cause
+
+`SessionService.createSession` inserted a session with no coordination, while reset replaced the
+credential and revoked sessions inside a transaction. A login could therefore verify the old
+password, have the reset complete, and then insert a session that was authorised by a password which
+no longer existed. Resetting a compromised password did not evict the attacker.
+
+### The protocol
+
+Both participants take the same **transaction-scoped PostgreSQL advisory lock**,
+`pg_advisory_xact_lock(hashtextextended(user_id, 0))`, on the **same transaction client** that
+performs their protected writes:
+
+```
+reset: lock -> consume token -> replace credential -> supersede -> revoke sessions -> COMMIT
+login: verify password (no lock) -> lock -> revalidate version -> insert session -> COMMIT
+```
+
+The key derives from database state, so every instance, container, and connection agrees without
+in-process coordination; a process-local mutex would be invisible to a second replica. The lock is
+released automatically on commit or rollback.
+
+Argon2id stays **outside** the lock: a 64 MiB three-iteration allocation must not run while holding a
+lock, and must not serialise concurrent logins. The consequence is that the credential can change
+between verification and insertion, which the in-lock revalidation detects - the login re-reads
+`passwordChangedAt` and refuses if it differs from the value seen at verification. The digest is
+never handed to the caller, so the check cannot become a credential-comparison oracle.
+
+### Precise guarantees
+
+| Ordering               | Outcome                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| Login commits first    | Reset takes the lock afterwards and revokes the session the login created.                    |
+| Reset commits first    | Login takes the lock afterwards, sees the advanced version, refuses with the generic failure. |
+| Either mid-transaction | The lock forces one of the two orders above.                                                  |
+
+Also: concurrent valid logins all admitted with distinct sessions; concurrent resets yield exactly one
+winner with no partial application; disabled accounts rejected in-lock; aborted transactions roll back
+the whole reset and release the lock.
+
+### What is explicitly not claimed
+
+This does **not** cancel an HTTP request that was already authorized - revocation only affects
+subsequent validation. It does not order recovery issuance against login, which is unnecessary
+because issuance never touches the credential. No schema column and no migration were added.
+
+### Evidence
+
+`apps/api/tests/password-recovery-race.integration.test.mjs`: 21 real-PostgreSQL tests that park a
+login at the exact seam between verification and insertion with an explicit latch - no sleeps, no
+timing assumptions. The critical test asserts the stale login rejects **and** that zero session rows
+exist. **Negative control:** temporarily disabling both the lock and the revalidation makes that test
+fail with the login resolving successfully, so it genuinely detects the vulnerability rather than
+passing vacuously. 21 passed on three consecutive runs.
+
+## Enumeration resistance
+
+Unknown address, disabled account, and missing credential all produce a byte-identical `202` with the
+same headers, and perform no write. Each ineligible path still runs a real Argon2id verification
+against the Stage 2.4 decoy digest so it is not distinguishable by duration alone. Recovery never
+creates an account. **Not a constant-time claim.**
+
+## Password replacement
+
+Reuses the accepted Stage 2.2 policy and Argon2id implementation unchanged. Unicode and whitespace
+semantics preserved, no trimming or normalisation, lone surrogates rejected, no test-only cost
+reduction, only the digest stored, `passwordChangedAt` advanced strictly past its previous value. The
+digest is never returned. A policy violation yields `400 password_policy_violation`, checked _after_
+token validation so it cannot disclose token validity or account existence.
 
 ## Tests
 
-Focused unit: 37 PASS. Cookie policy derivation per environment, `__Host-` requirement
-satisfaction, `Max-Age` bounding and expiry clearing, cookie parsing including duplicate and
-quoted-form rejection, exact origin matching with wildcard/suffix/subdomain/forwarded-header
-rejection, email normalisation semantics, error body shapes, and origin configuration validation
-including the wildcard-host case.
+Focused unit: 23 PASS. Token entropy, format, canonical encoding, digest determinism, expiry
+arithmetic, fragment-not-query URLs, delivery gating and in-memory-only recording, and eight
+configuration cases including the production refusal and six rejected URL bases.
 
-Focused integration: 66 PASS against real PostgreSQL and the real HTTP application. Login success,
-cookie attributes, no token in any response surface, digest-only persistence, normalisation, no
-password trimming, no session created on any failure, all four failure conditions byte-identical,
-ten malformed-body shapes, content-type enforcement, size limit, database-unavailable non-
-authentication, current-user resolution and its six rejection cases, logout revocation and
-idempotence, per-session revocation isolation, same-user second session survival, cross-user
-isolation, origin enforcement across eight disallowed forms, missing-Origin fail-closed, five
-spoofed-header attempts, cache headers, absent CORS headers, and a ten-route scope regression.
+Focused integration: 53 PASS against real PostgreSQL and the real HTTP application. Eligible, unknown,
+disabled, and credential-less issuance with byte-identical responses; digest-only persistence;
+30-minute expiry; supersession; delivery receipt; all unusable-token classes; policy rejection
+without token consumption; whitespace and Unicode preservation; credential rotation;
+`passwordChangedAt` advance; session revocation; old-password rejection; new-password success; replay
+refusal; cross-user isolation; concurrent single-redemption; concurrent issuance/reset ordering;
+rollback on induced failure; disable/reset; the full Origin matrix including four spoofed headers;
+body validation, content type, size limit, and query-token refusal; no-store; and a separate app
+booted with delivery disabled proving it fails closed with no token written.
 
-Both use the guarded `TEST_DATABASE_URL`/`TEST_REDIS_URL` with `assertDisposableTestDatabase`, child-first
-scoped cleanup, synthetic addresses, and no fallback to the application database. Verified
-afterwards that the test database holds zero users, credentials, sessions, and events. The guard
-still rejects the application database by name and a non-loopback host.
+Concurrency suite: 21 PASS. See **Resolved blocker** above for the case list and the negative control.
+
+Every fixture is scoped to its own user ids; no assertion depends on a global row count.
 
 ## Validation
 
@@ -112,160 +180,65 @@ still rejects the application database by name and a non-loopback host.
 - pnpm format:check: PASS.
 - pnpm lint: PASS; zero warnings.
 - pnpm typecheck: PASS; 11 tasks.
-- pnpm test: PASS; 112 unit/toolchain tests (config 22, Redis 4, database 8, worker 4, API 73 including 37 focused, plus one Node toolchain test).
+- pnpm test: PASS; 135 unit/toolchain tests (config 26, Redis 4, database 8, worker 4, API 96 including 23 focused, plus one Node toolchain test).
 - pnpm build: PASS; seven build tasks.
 - pnpm check: PASS with applicable Turbo cache reuse.
-- pnpm test:integration: PASS; 134 cases (API 91 including 66 focused, 35 database, 8 Redis), none skipped; three migrations, none pending.
-- pnpm smoke: PASS; 19 assertions, including four new fail-fast checks for the origin allowlist.
+- pnpm test:integration: PASS; 208 cases (API 165 including 74 focused recovery, 35 database, 8 Redis), none skipped; three migrations, none pending.
+- pnpm smoke: PASS; 19 assertions.
 - pnpm mobile:check and pnpm mobile:export: PASS, Android 578 modules.
 - git diff --check: PASS.
-- pnpm audit --audit-level=high: EXPECTED FAIL, exactly two accepted high advisories
-  (node-forge GHSA-86w9-cpqp-85rv, braces GHSA-vfj7-8cjw-p6xm). No new finding, no suppression.
+- pnpm audit --audit-level=high: EXPECTED FAIL, exactly two accepted high advisories (node-forge GHSA-86w9-cpqp-85rv, braces GHSA-vfj7-8cjw-p6xm). No new finding, no suppression.
 
-## Defects found and fixed during review
+## Changed accepted code
 
-1. `new URL` accepts a literal `*` and `,` inside a host, so `https://*.example.com` and a
-   comma-joined pair were being stored as trusted origins that can never match, hiding a
-   misconfiguration instead of failing startup. Host characters are now validated explicitly.
-2. The exception filter detected malformed JSON by the body-parser error `type`, but Nest
-   re-wraps that failure as its own `BadRequestException` and drops the type, so the parser's
-   message - which quotes the submitted fragment - reached the client. Detection is now by HTTP
-   status as well as type.
-3. The oversized-body 413 came from the adapter parser and was not reliably distinguishable from a
-   malformed body. An explicit pre-parse `Content-Length` check now yields the documented 413
-   deterministically.
-4. An unused import and a lint suppression were cleaned up.
+Stage 2.5 modifies three previously accepted files, all within the authorized boundary:
+
+1. `apps/api/src/identity/auth.service.ts` - login now verifies the password, then takes the advisory
+   lock and revalidates the credential version in a transaction before inserting the session.
+2. `apps/api/src/identity/session.service.ts` - the insert body is factored into a private method and
+   exposed as `createSessionInTransaction(tx, userId)` so a caller holding the lock can write on its
+   own transaction client. The accepted `createSession` behaviour is unchanged.
+3. `apps/api/src/identity/password-credential.service.ts` - adds `verifyCredentialVersioned`, which
+   returns the verification result plus the credential version observed. The accepted
+   `verifyCredential` is unchanged.
+
+The Stage 2.4 scope regression test was also updated: it asserted the two recovery routes return
+`404`, which was correct when recovery did not exist and is superseded by this authorization.
+Registration, signup, password change, session listing, logout-all, revoke-all, school join, tenant,
+and refresh routes remain asserted absent.
 
 ## Boundaries and follow-ups
 
-Preserved unchanged: both accepted high advisories and their unreached dispositions, the two
-scoped Prisma overrides, the concurrent Prisma generation EEXIST item, the Actions Node 20-to-24
-warning, the Ubuntu 24.04-to-26.04 migration notice, native device/store builds not run, non-amd64
-images unverified, the Compose PostgreSQL major-version tag pin, development-only credentials, the
-deferred audit-exception mechanism, InfrastructureProbe retirement, the Stage 2.2
-portability/capacity/policy-evolution reviews, and the Stage 2.3 concurrency limitations.
+Preserved unchanged: both accepted high advisories and their unreached dispositions, the two scoped
+Prisma overrides, the concurrent Prisma generation EEXIST item, the Actions Node 20-to-24 warning, the
+Ubuntu migration notice, native device/store builds not run, non-amd64 images unverified, the Compose
+PostgreSQL tag pin, development-only credentials, the deferred audit-exception mechanism,
+InfrastructureProbe retirement, the Stage 2.2 portability/capacity/policy reviews, and the Stage 2.4
+deployment blocker and deferred CSRF design.
 
-New follow-ups, recorded in project-state.json and docs/security/AUTH_API.md:
+Remaining architectural limitations, recorded in project-state.json:
 
-- **No rate limiting.** The largest gap in this stage. Must not be exposed to the public internet.
-- Origin allowlist is not proxy-aware; a terminating proxy must preserve the browser `Origin`.
-- A session-bound double-submit CSRF token is the intended approach for later authenticated
-  mutations and is deliberately not built ahead of them.
-- No rehash-on-login, so Argon2id parameter evolution stays an explicit follow-up.
-- Credentialed CORS absent, so the web and control apps cannot yet call the API from a browser.
-- No `AuthenticationEvent` rows are written; that needs its own sanitized metadata contract.
-- Revocation does not reach a request already authorized before it committed.
+- Concurrent logins for one user serialise on the advisory lock for the in-transaction revalidation
+  and insert. That section performs no Argon2id work, so the window is short, but it is a per-user
+  serialisation point.
+- The lock is advisory, so it coordinates only writers that take it. Any future session-creation path
+  must also participate; the single existing production path is covered and asserted by a regression
+  test.
 
-Not implemented: registration, password reset or recovery, email verification, refresh tokens,
-logout-all, session listing, JWT, any authentication framework, rate limiting, tenant or school
-enrolment, role or permission assignment, and client-side auth state.
+Still open: no real email provider; recovery email flooding; token brute force; Argon2id resource
+exhaustion; token-request abuse invalidating a victim token; the non-proxy-aware trusted-origin
+configuration.
 
-## Independent security review
+Not implemented: registration, email verification, MFA, password change while authenticated, a real
+email provider, rate limiting, `AuthenticationEvent` recording, session issuance during recovery, and a
+session-generation column.
 
-Performed before commit by driving the real application against real PostgreSQL, not by re-reading the
-committed tests.
+## Git status
 
-**Enumeration resistance.** Compared the complete observable response - status, every header, body -
-across unknown email, wrong password, missing credential, disabled account, and policy-invalid
-passwords on both an existing and an unknown account. All six byte-identical: `401`,
-`{"statusCode":401,"error":"authentication_failed"}`, `Cache-Control: no-store`, `Vary: Origin`, no
-`Set-Cookie`. No session written on any failure path. No password, digest, address, Prisma code or
-stack in any response. The decoy digest is confirmed to execute: a failed login with a policy-valid
-password measured 324 ms against 348 ms for a real successful verification. **Not** a constant-time
-claim.
+HEAD and origin/main both remain at `514c859b1daa955cbc1d39b4984df62f7d0242da`. Nothing is staged,
+committed, or pushed. No deployment occurred.
 
-**Session security.** Exactly one session per login. Token present only in `Set-Cookie`, absent from
-the body, every other header, and the request URL. PostgreSQL stores only the SHA-256 digest; no
-column contains the raw token. `HttpOnly` and `SameSite=Lax` in both environments; `__Host-` and
-`Secure` in production with no configuration able to disable it; no `Domain`; measured lifetime
-exactly 604800000 ms with cookie `Max-Age` matching. Duplicate cookies fail closed. Logout revokes only
-the presented session, preserves the original revocation timestamp on repeat, leaves the same user's
-other session and other users' sessions valid, and clears the cookie with matching attributes. Revoked,
-expired and disabled sessions all rejected by `GET /auth/me`. Every authentication response including
-errors is `no-store`.
+Exact next action: owner reviews the Stage 2.5 implementation, the resolved race, and the atomicity
+design.
 
-**Origin and CSRF.** All ten disallowed forms rejected with 403: scheme, port and host differences, a
-suffix lookalike, a wildcard, a trailing slash, and four spoofed forwarded/`Host`/`Referer` headers.
-Query-supplied credentials and tokens are ignored: a logout driven by `?token=` does not revoke, and
-`/auth/me` cannot be driven by a query token. No credentialed CORS header is emitted.
-
-**Logging.** No `console`, `Logger`, `stdout` or `stderr` write exists anywhere in the authentication
-path. Nest runs with the logger disabled and the Prisma client keeps logging off.
-
-**Deployment boundary.** Not deployed. The absence of rate limiting is documented as a blocker for
-public internet exposure in docs/security/AUTH_API.md, docs/architecture/SECURITY.md and
-project-state.json. Stage 2.6 was not started.
-
-## Defects found and fixed in this review
-
-1. The recorded unit/toolchain total was wrong. It is **112**, not the 109 recorded previously: the
-   74-test Stage 2.3 baseline plus 38 added by Stage 2.4. The 109 figure omitted three pre-existing
-   API unit tests. No test result changed; only the recorded number was incorrect. Corrected in
-   PROJECT_STATE.md, this file and project-state.json.
-2. Seven integration assertions counted session rows globally, so unrelated residue in the
-   disposable test database failed 27 tests and made an authentication defect indistinguishable from
-   leftover data. Those assertions are now scoped to each test's own fixture users. Re-verified by
-   seeding a foreign user, credential and session, confirming all 66 tests still pass, then removing it.
-
-## Commit, push and hosted verification
-
-The 23 reviewed Stage 2.4 files were committed as `891af278313f68f385dbf6e405f9304347bb82bd` with
-subject `feat: add HTTP authentication endpoints` and pushed normally to main. No amendment, force
-push, or deployment. The baseline `6df160a` remains an ancestor. No dependency, lockfile, schema,
-migration, or accepted-stage document changed.
-
-[Hosted run 37747657210](https://github.com/ubaliringim/tsms/actions/runs/37747657210) completed for
-that exact SHA on hosted Linux.
-
-- `validate` **PASS** (1m35s), every step green: frozen install, Prisma generation, Compose
-  infrastructure, check, integration tests, mobile dependency check, mobile Android export (578
-  modules), smoke, teardown, tracked-file cleanliness. 112 unit/toolchain tests (config 22, database 8,
-  Redis 4, worker 4, API 73 including 37 focused, plus one Node toolchain test), 134 integration tests
-  (35 database, 8 Redis, 91 API including 66 focused), 19 smoke assertions, all three migrations
-  replayed. Hosted counts match local exactly.
-- `security-audit` **EXPECTED FAIL** (25s) on exactly node-forge GHSA-86w9-cpqp-85rv and braces
-  GHSA-vfj7-8cjw-p6xm, both high, both with no patched release. No new advisory, no suppression,
-  threshold unchanged.
-- No other jobs. **The overall workflow is red and is not green.**
-- Annotations repeat the existing follow-ups: Actions Node 20-to-24 forced runtime and the
-  ubuntu-latest to Ubuntu 26 migration notice. Concurrent Prisma generation was not observed on this
-  run; that follow-up remains open.
-
-These hosted-results documentation updates were prepared for owner review and are now accepted.
-
-## Stage 2.4 acceptance and documentation closure
-
-The owner accepted Stage 2.4 and authorized this final documentation closure, limited to
-`PROJECT_STATE.md`, `project-state.json`, and `tasks/CURRENT.md`, with subject
-`docs: close Stage 2.4 hosted validation` and a normal push to main. No amendment, force push, or
-deployment.
-
-Before that commit the working tree was confirmed to hold exactly those three modified documentation
-files: nothing staged, nothing untracked, and no implementation, test, schema, migration, dependency,
-lockfile, configuration, or CI file touched. HEAD and `origin/main` both equalled the accepted
-implementation SHA `891af278313f68f385dbf6e405f9304347bb82bd`.
-
-Acceptance is bounded to global identity authentication as implemented, and resolves no dependency
-advisory. These remain explicitly open:
-
-- No login rate limiting; public internet deployment is prohibited until Stage 2.6.
-- The trusted `Origin` allowlist is not proxy-aware.
-- A session-bound CSRF token for future authenticated mutations is deferred.
-- Rehash-on-login is not implemented.
-- Credentialed CORS for web/control is not implemented, so the contract is same-origin only.
-- `AuthenticationEvent` recording is not implemented.
-- The accepted Stage 2.3 session concurrency limitations remain documented and unchanged.
-- `node-forge` GHSA-86w9-cpqp-85rv and `braces` GHSA-vfj7-8cjw-p6xm remain unresolved, with no
-  patched upstream release.
-
-All previously documented infrastructure, Prisma, native-platform, CI, and dependency follow-ups are
-preserved unchanged.
-
-Final stage statuses: Stage 0 ACCEPTED; Stage 1 ACCEPTED; Stage 2.1 ACCEPTED / HOSTED VERIFIED /
-CLOSED; Stage 2.2 ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2.3 ACCEPTED / HOSTED VERIFIED / CLOSED;
-Stage 2.4 ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2 overall NOT ACCEPTED; Stage 2.5 NOT STARTED /
-UNAUTHORIZED.
-
-Exact next action: hard stop.
-
-**HARD STOP: do not deploy or begin Stage 2.5 without explicit owner authorization.**
+**HARD STOP: do not commit, push, deploy, or begin Stage 2.6 without explicit owner authorization.**
