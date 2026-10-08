@@ -42,13 +42,13 @@ Stage 2.3 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-0
 
 Stage 2.4 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Implementation commit `891af278313f68f385dbf6e405f9304347bb82bd` (`feat: add HTTP authentication endpoints`); hosted run [37747657210](https://github.com/ubaliringim/tsms/actions/runs/37747657210). Record at tasks/CURRENT.md and docs/security/AUTH_API.md.
 
-Stage 2.5 status: IN PROGRESS / LOCALLY VALIDATED; NOT ACCEPTED, not committed, not pushed, not deployed. Current substage. Record at tasks/CURRENT.md and docs/security/PASSWORD_RECOVERY.md.
+Stage 2.5 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Implementation commit `e2bb3b79aa774b64e155b273b35af6dd17a47242` (`feat: add secure password recovery`); hosted run [37859811782](https://github.com/ubaliringim/tsms/actions/runs/37859811782). Record at tasks/CURRENT.md and docs/security/PASSWORD_RECOVERY.md.
 
 Next substage: 2.6 - Rate limiting and abuse protection. NOT STARTED / UNAUTHORIZED.
 
-Exact next action: owner reviews the Stage 2.5 implementation, the atomicity design, and the escalated session-creation race decision. Changes remain uncommitted.
+Exact next action: hard stop. Stage 2.5 documentation closure was the only authorized remaining work.
 
-DO NOT: start Stage 2.6 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken audits, commit, push, or deploy without explicit authorization.
+DO NOT: start Stage 2.6 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken audits, amend, force-push, commit, push, or deploy without explicit authorization.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -316,3 +316,100 @@ absent, and the recovery routes are covered by the new suite instead.
 
 Changes are uncommitted, unstaged, and unpushed. **HARD STOP: Stage 2.6 is NOT STARTED /
 UNAUTHORIZED.**
+
+## Stage 2.5 final security verification, commit and hosted verification - 2026-10-08
+
+The owner accepted Stage 2.5 locally for final security verification and implementation commit. Two
+defects were found during that review and corrected.
+
+**The credential version was not a safe unique counter.** `passwordChangedAt` is PostgreSQL
+`timestamp(3)` and a JavaScript `Date` is also millisecond, so the accepted `previous + 1` arithmetic
+is not truncated and nothing is silently rounded away. But a credential row that is deleted and
+recreated can legitimately reuse a timestamp, so the timestamp alone cannot identify credential
+state. A live probe reproduced exactly that: delete and recreate the credential with a _different_
+password while restoring the original `passwordChangedAt`, and the timestamp comparison passes while
+the digest has changed. The in-lock revalidation now also compares a SHA-256 fingerprint of the stored
+digest, which is authoritative. Two regression tests cover this, and removing only the fingerprint
+while keeping the timestamp makes them fail.
+
+The Argon2id digest is never returned by `verifyCredentialVersioned` and never compared in the clear.
+A one-way fingerprint is returned instead and is never logged. The approved Argon2id parameters are
+unchanged.
+
+**The advisory-lock key was duplicated.** Password reset carried its own inline
+`pg_advisory_xact_lock` expression instead of calling the shared helper, so the key derivation existed
+in two places where they could drift apart. It now calls the same helper, and the key exists in
+exactly one place. Verification confirms login and reset acquire the identical key on the same
+transaction client that performs their protected writes; Argon2id runs before the lock; credential
+revalidation, session insertion, credential replacement, and session revocation all occur under it;
+xact-scope releases it on rollback; no process-local mutex is used; the accepted `createSession`
+signature is retained; and the requirement that every future session-creation path participate is
+documented in `user-session-lock.ts`.
+
+The 22 reviewed Stage 2.5 files were committed as `e2bb3b79aa774b64e155b273b35af6dd17a47242` with
+subject `feat: add secure password recovery` and pushed normally. No amendment, force push, or
+deployment. The baseline `514c859` remains an ancestor. No schema, migration, dependency, or lockfile
+change.
+
+[Hosted run 37859811782](https://github.com/ubaliringim/tsms/actions/runs/37859811782) completed for
+that exact SHA. `validate` **PASS** with every step green: 139 unit/toolchain tests, 214 integration
+tests, 19 smoke assertions, all three migrations applied with none pending, mobile dependency check
+and Android export at 578 modules, and tracked-file cleanliness. Hosted counts match local exactly.
+`security-audit` **EXPECTED FAIL** on exactly node-forge GHSA-86w9-cpqp-85rv and braces
+GHSA-vfj7-8cjw-p6xm, both high, both with no patched release, no new advisory and no suppression. No
+other jobs and no unexpected failures. **The overall workflow is red and is not green.** The Actions
+Node 20-to-24 warning and the Ubuntu migration notice persist unchanged.
+
+Stage 2.5 is HOSTED VERIFIED / AWAITING FINAL OWNER ACCEPTANCE. Stages 2.1 through 2.4 acceptance are
+untouched. Stage 2 overall remains NOT ACCEPTED. Stage 2.6 remains NOT STARTED / UNAUTHORIZED. These
+hosted-results documentation updates are deliberately left uncommitted.
+**HARD STOP: no documentation closure commit, no deployment, and no Stage 2.6.**
+
+## Stage 2.5 final documentation closure - 2026-10-08
+
+The owner accepted Stage 2.5 and authorized committing only PROJECT_STATE.md, project-state.json and
+tasks/CURRENT.md with subject `docs: close Stage 2.5 hosted validation`, then pushing main normally.
+Before that commit the working tree was confirmed to hold exactly those three modified documentation
+files, with nothing staged, nothing untracked, and no implementation, test, schema, migration,
+dependency, lockfile, configuration, or CI file touched. Both HEAD and `origin/main` equalled the
+accepted implementation SHA `e2bb3b79aa774b64e155b273b35af6dd17a47242`.
+
+Recorded hosted results, unchanged from the verification checkpoint: `validate` PASS; 139
+unit/toolchain tests; 214 integration tests; 19 smoke assertions; three Prisma migrations applied
+with none pending; mobile dependency check and Android export PASS at 578 modules; `security-audit`
+EXPECTED FAIL on exactly the two documented high-severity advisories. The overall workflow remains red
+and is **not** green. Neither advisory is marked resolved.
+
+### Accepted synchronization protocol
+
+- Login and password reset acquire the **same** transaction-scoped PostgreSQL advisory lock,
+  `pg_advisory_xact_lock(hashtextextended(user_id, 0))`, on the **same transaction client** that
+  performs their protected writes. The key exists in exactly one place, in a shared helper.
+- Argon2id verification runs **outside** the lock, so a 64 MiB three-iteration allocation is never
+  held under it and concurrent logins for one user are not serialised by hashing.
+- Login revalidates the credential under the lock before creating a session, comparing **both**
+  `passwordChangedAt` and a SHA-256 fingerprint of the stored digest. The digest itself is never
+  returned and never logged.
+- Password replacement, recovery-token consumption, outstanding-token invalidation, and session
+  revocation are **atomic**: one transaction, all or nothing.
+- Existing sessions **are** revoked during a reset.
+- Recovery creates **no** session; the user must log in again.
+- In-flight HTTP requests are **not** canceled by a reset. Revocation affects subsequent validation
+  only.
+
+No broader concurrency guarantee is claimed than the implementation provides.
+
+### Unresolved risks preserved
+
+Per-user login serialization during the short locked transaction; advisory-lock coordination applying
+only to participating writers; no production email provider; recovery unavailable in production;
+recovery email flooding; token-request abuse; token brute-force attempts; Argon2id resource
+exhaustion; no comprehensive rate limiting; public deployment prohibited; deferred credentialed
+CORS and the broader CSRF design; and every previously documented infrastructure, Prisma, CI,
+native-platform, and dependency follow-up. `node-forge` GHSA-86w9-cpqp-85rv and `braces`
+GHSA-vfj7-8cjw-p6xm remain **unresolved**, both installed, neither with a patched upstream release.
+
+Stage 0: ACCEPTED. Stage 1: ACCEPTED. Stage 2.1: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.2:
+ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.3: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.4:
+ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.5: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall:
+NOT ACCEPTED. Stage 2.6: NOT STARTED / UNAUTHORIZED. **HARD STOP.**

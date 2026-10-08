@@ -3,7 +3,7 @@
 Owner: TeamStack Technologies LTD
 
 Stage 0 and Stage 1: ACCEPTED. Stages 2.1, 2.2, 2.3 and 2.4: ACCEPTED / HOSTED VERIFIED / CLOSED.
-Stage 2.5: IN PROGRESS / LOCALLY VALIDATED; NOT ACCEPTED, NOT COMMITTED, NOT PUSHED.
+Stage 2.5: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08).
 Stage 2 overall: NOT ACCEPTED. Stage 2.6 and later: NOT STARTED / UNAUTHORIZED.
 
 ## Starting state
@@ -235,10 +235,65 @@ session-generation column.
 
 ## Git status
 
-HEAD and origin/main both remain at `514c859b1daa955cbc1d39b4984df62f7d0242da`. Nothing is staged,
-committed, or pushed. No deployment occurred.
+HEAD and origin/main both at `e2bb3b79aa774b64e155b273b35af6dd17a47242`. Nothing staged. No
+deployment occurred.
 
-Exact next action: owner reviews the Stage 2.5 implementation, the resolved race, and the atomicity
-design.
+## Commit, push and hosted verification
 
-**HARD STOP: do not commit, push, deploy, or begin Stage 2.6 without explicit owner authorization.**
+The 22 reviewed Stage 2.5 files were committed as `e2bb3b79aa774b64e155b273b35af6dd17a47242` with
+subject `feat: add secure password recovery` and pushed normally. No amendment, force push, or
+deployment. The baseline `514c859` remains an ancestor. No schema, migration, dependency, or lockfile
+change.
+
+[Hosted run 37859811782](https://github.com/ubaliringim/tsms/actions/runs/37859811782) completed for
+that exact SHA on hosted Linux.
+
+- `validate` **PASS**, every step green: 139 unit/toolchain tests (config 26, database 8, Redis 4,
+  worker 4, API 96, plus one Node toolchain test), 214 integration tests (35 database, 8 Redis, 171
+  API), 19 smoke assertions, all three migrations applied with none pending, mobile dependency check,
+  Android export at 578 modules, and tracked-file cleanliness. Hosted counts match local exactly.
+- `security-audit` **EXPECTED FAIL** on exactly node-forge GHSA-86w9-cpqp-85rv and braces
+  GHSA-vfj7-8cjw-p6xm, both high, both with no patched release. No new advisory, no suppression,
+  threshold unchanged.
+- No other jobs and no unexpected failures. **The overall workflow is red and is not green.**
+- Annotations repeat the existing follow-ups: Actions Node 20-to-24 forced runtime and the
+  ubuntu-latest to Ubuntu 26 migration notice.
+
+These hosted-results documentation updates were prepared for owner review, and Stage 2.5 was accepted
+immediately afterwards. See the closure section below.
+
+## Stage 2.5 acceptance and documentation closure
+
+The owner accepted Stage 2.5 and authorized this final documentation closure, limited to
+`PROJECT_STATE.md`, `project-state.json`, and `tasks/CURRENT.md`, with subject
+`docs: close Stage 2.5 hosted validation` and a normal push to main. No amendment, force push, or
+deployment.
+
+Before that commit the working tree was confirmed to hold exactly those three modified documentation
+files: nothing staged, nothing untracked, and no implementation, test, schema, migration, dependency,
+lockfile, configuration, or CI file touched. HEAD and `origin/main` both equalled the accepted
+implementation SHA `e2bb3b79aa774b64e155b273b35af6dd17a47242`.
+
+Acceptance is bounded to secure password recovery as implemented and resolves no dependency advisory.
+The following remain explicitly open:
+
+- Per-user login serialization during the short locked transaction.
+- Advisory-lock coordination applies only to participating writers.
+- No production email provider, so recovery is unavailable in production.
+- Recovery email flooding and token-request abuse.
+- Token brute-force attempts.
+- Argon2id resource exhaustion.
+- No comprehensive rate limiting; public deployment remains prohibited.
+- Deferred credentialed CORS and the broader CSRF design.
+- Every previously documented infrastructure, Prisma, CI, native-platform, and dependency follow-up.
+
+All previously documented stage history is preserved.
+
+Final stage statuses: Stage 0 ACCEPTED; Stage 1 ACCEPTED; Stage 2.1 ACCEPTED / HOSTED VERIFIED /
+CLOSED; Stage 2.2 ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2.3 ACCEPTED / HOSTED VERIFIED / CLOSED;
+Stage 2.4 ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2.5 ACCEPTED / HOSTED VERIFIED / CLOSED;
+Stage 2 overall NOT ACCEPTED; Stage 2.6 NOT STARTED / UNAUTHORIZED.
+
+Exact next action: hard stop.
+
+**HARD STOP: do not deploy or begin Stage 2.6 without explicit owner authorization.**

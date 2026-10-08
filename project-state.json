@@ -16,8 +16,8 @@
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
   "task": "2.5",
-  "status": "in_progress_locally_validated",
-  "reviewStatus": "awaiting_owner_review",
+  "status": "accepted_hosted_verified_closed",
+  "reviewStatus": "complete",
   "nextTask": {
     "id": "2.6",
     "name": "Rate limiting and abuse protection",
@@ -240,13 +240,14 @@
     "dependencyAudit": "expected_fail_exactly_two_known_high_no_new_findings",
     "diffCheck": "pass",
     "securityReview": "pass_with_one_documentation_correction_and_two_added_tests; no production behaviour change",
-    "hostedCI": "validate_pass_security_audit_expected_fail_at_891af278313f68f385dbf6e405f9304347bb82bd_run_37747657210",
+    "hostedCI": "validate_pass_security_audit_expected_fail_at_e2bb3b79aa774b64e155b273b35af6dd17a47242_run_37859811782",
     "testCount": 74,
     "integrationTestCount": 68,
     "focusedSessionUnitTests": 12,
     "focusedSessionIntegrationTests": 17,
     "uuidLengthCheckFinding": "The exact 36-character length check in requireId is redundant defence-in-depth, not the mechanism that rejects trailing line terminators. The anchored pattern already rejects \\n, \\r, U+2028 and U+2029 because it ends with the specific class [0-9a-f]{12}. Both checks retained; an earlier claim that the length check rejects a trailing newline was corrected.",
-    "stage24Hosted": "validate_pass_112_unit_134_integration_19_smoke_security_audit_expected_fail_run_37747657210"
+    "stage24Hosted": "validate_pass_112_unit_134_integration_19_smoke_security_audit_expected_fail_run_37747657210",
+    "stage25Hosted": "validate_pass_139_unit_214_integration_19_smoke_security_audit_expected_fail_run_37859811782"
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
@@ -265,17 +266,19 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Stage 2.5 changes, including the resolved password-reset/session-creation race, are uncommitted, unstaged and unpushed pending owner review. HEAD and origin/main both remain at 514c859b1daa955cbc1d39b4984df62f7d0242da.",
-  "nextAction": "Owner reviews the Stage 2.5 password recovery implementation, the atomicity design, and the escalated session-creation race decision. Stage 2 overall NOT ACCEPTED; Stage 2.6 NOT STARTED / UNAUTHORIZED.",
+  "workingTree": "Stage 2.5 accepted and closed by the project owner. Documentation closure commit docs: close Stage 2.5 hosted validation covers exactly PROJECT_STATE.md, project-state.json and tasks/CURRENT.md.",
+  "nextAction": "Hard stop. Stage 2.5 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall NOT ACCEPTED; Stage 2.6 NOT STARTED / UNAUTHORIZED and requires separate owner authorization.",
   "doNot": [
     "Start Stage 2.6 or later without explicit owner authorization",
-    "Deploy to any public network",
-    "Add a real email provider without explicit authorization",
+    "Expose the API to the public internet before Stage 2.6 rate limiting exists",
+    "Add a real email provider without explicit owner authorization",
     "Add a session-generation column without owner approval",
     "Add registration, email verification, MFA, or password change",
+    "Enable credentialed CORS",
     "Modify accepted schema or migrations",
     "Suppress or weaken the dependency audit",
-    "Commit, push, or deploy"
+    "Mark the overall workflow green or either advisory resolved",
+    "Amend, force-push, or deploy"
   ],
   "stageAcceptedAt": null,
   "acceptedBy": null,
@@ -323,8 +326,8 @@
     "accepted": false,
     "specification": "Authentication & Identity Specification v1.0",
     "specificationApprovedBy": "Project owner",
-    "acceptedSubstages": ["2.1", "2.2", "2.3", "2.4"],
-    "implementationScope": "2.1-2.4 accepted; 2.5 in progress; 2.6 and later unauthorized"
+    "acceptedSubstages": ["2.1", "2.2", "2.3", "2.4", "2.5"],
+    "implementationScope": "2.1-2.5 accepted; 2.6 and later unauthorized"
   },
   "postAcceptanceCIRepair": {
     "date": "2026-10-07",
@@ -473,11 +476,12 @@
   "currentSubstage": {
     "id": "2.5",
     "name": "Secure Password Recovery",
-    "status": "in_progress_locally_validated",
-    "accepted": false,
-    "acceptedBy": null,
-    "acceptedAt": null,
-    "hostedVerified": false
+    "status": "accepted_hosted_verified_closed",
+    "accepted": true,
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-08",
+    "acceptedCommit": "e2bb3b79aa774b64e155b273b35af6dd17a47242",
+    "hostedRunId": 37859811782
   },
   "authorization": {
     "stage": "2",
@@ -918,7 +922,7 @@
     "2.2": "accepted_hosted_verified_closed",
     "2.3": "accepted_hosted_verified_closed",
     "2.4": "accepted_hosted_verified_closed",
-    "2.5": "in_progress_locally_validated_not_accepted",
+    "2.5": "accepted_hosted_verified_closed",
     "2.6": "not_started_unauthorized"
   },
   "stage24": {
@@ -1180,10 +1184,15 @@
     }
   },
   "stage25": {
-    "status": "in_progress_locally_validated",
-    "accepted": false,
-    "hostedVerified": false,
-    "commit": null,
+    "status": "closed_hosted_verification_complete",
+    "accepted": true,
+    "hostedVerified": true,
+    "commit": {
+      "sha": "e2bb3b79aa774b64e155b273b35af6dd17a47242",
+      "message": "feat: add secure password recovery",
+      "push": "main_to_origin_success_without_force",
+      "filesCommitted": 22
+    },
     "contract": "docs/security/PASSWORD_RECOVERY.md",
     "endpoints": [
       {
@@ -1356,7 +1365,7 @@
       "lint": "pass",
       "typecheck": "pass_11_tasks",
       "test": "pass_135_unit_toolchain",
-      "unitTests": 135,
+      "unitTests": 139,
       "unitBreakdown": {
         "config": 26,
         "redis": 4,
@@ -1369,16 +1378,16 @@
       "build": "pass_7_tasks",
       "check": "pass_with_applicable_Turbo_cache",
       "integrationTests": "pass_187_cases_zero_skipped",
-      "integrationTestCount": 208,
-      "apiIntegrationTests": 165,
+      "integrationTestCount": 214,
+      "apiIntegrationTests": 171,
       "focusedRecoveryIntegrationTests": 74,
       "smoke": "pass_19_assertions",
       "mobileCompatibility": "pass",
       "mobileExport": "pass_android_578_modules",
       "diffCheck": "pass",
       "dependencyAudit": "expected_fail_exactly_two_known_high_no_new_findings",
-      "hostedCI": "not_run_no_commit",
-      "concurrentRaceTests": 21
+      "hostedCI": "validate_pass_security_audit_expected_fail_at_e2bb3b79aa774b64e155b273b35af6dd17a47242_run_37859811782",
+      "concurrentRaceTests": 27
     },
     "unchanged": [
       "accepted schema and migrations",
@@ -1389,6 +1398,114 @@
       "Stage 2.4 endpoints, cookie policy and origin guard",
       "health and readiness contracts",
       "test-database safety guards"
-    ]
+    ],
+    "hosted": {
+      "runId": 37859811782,
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/37859811782",
+      "headSha": "e2bb3b79aa774b64e155b273b35af6dd17a47242",
+      "completedAt": "2026-10-08",
+      "overallConclusion": "failure solely because of the accepted, unsuppressed security-audit baseline. Not green.",
+      "validate": {
+        "conclusion": "success",
+        "stepsAllPassed": true,
+        "unitToolchainTests": 139,
+        "vitestUnitTests": 138,
+        "nodeToolchainTests": 1,
+        "unitBreakdown": {
+          "config": 26,
+          "database": 8,
+          "redis": 4,
+          "worker": 4,
+          "api": 96
+        },
+        "integrationTests": 214,
+        "integrationBreakdown": {
+          "database": 35,
+          "redis": 8,
+          "api": 171
+        },
+        "smokeAssertions": 19,
+        "migrationsApplied": 3,
+        "pendingMigrations": 0,
+        "mobileCheck": "pass",
+        "mobileExport": "pass_android_578_modules",
+        "trackedFileCleanliness": "pass_git_diff_exit_code",
+        "unexpectedFailures": 0,
+        "hostedCountsMatchLocal": true
+      },
+      "securityAudit": {
+        "conclusion": "failure",
+        "expected": true,
+        "findings": 2,
+        "severity": "high",
+        "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
+        "patchedVersions": "None for both",
+        "newAdvisories": 0,
+        "suppressionApplied": false,
+        "thresholdChanged": false
+      },
+      "otherJobs": "none",
+      "annotations": [
+        "Node.js 20 deprecated; actions/checkout@v4, actions/setup-node@v4 and pnpm/action-setup@v4 are forced onto Node.js 24. Pre-existing follow-up, unchanged.",
+        "ubuntu-latest migrates to Ubuntu 26 during October 19 - November 19, 2026. Pre-existing follow-up, unchanged."
+      ]
+    },
+    "securityReviewCheckpoint": {
+      "date": "2026-10-08",
+      "credentialVersionFinding": "passwordChangedAt is PostgreSQL timestamp(3) and JavaScript Date is also millisecond, so the accepted previous+1 arithmetic is not truncated. However a credential row that is deleted and recreated can legitimately reuse a timestamp, so the timestamp is not a unique version counter. A live probe reproduced exactly that: delete and recreate the credential with a different password but the original passwordChangedAt, and the timestamp comparison alone passes while the digest has changed. The in-lock check was therefore strengthened to compare a SHA-256 fingerprint of the stored digest alongside the timestamp.",
+      "digestExposure": "The Argon2id digest is never returned by verifyCredentialVersioned and never compared in the clear; a one-way SHA-256 fingerprint is returned instead and is never logged. A regression test asserts the stored digest does not appear anywhere in the value the caller receives.",
+      "lockKeyFinding": "Password reset originally carried its own inline pg_advisory_xact_lock expression rather than the shared helper, duplicating the key derivation in two places where they could drift. It now calls the same helper, so the key exists in exactly one place.",
+      "advisoryLockVerified": "Login and reset acquire the identical lock key on the same transaction client that performs their protected writes; Argon2id runs before the lock; credential revalidation, session insertion, credential replacement, and session revocation all occur under it; xact-scope releases on rollback; no process-local mutex is used; the accepted createSession signature is retained; and the requirement that future session-creation paths participate is documented.",
+      "negativeControls": [
+        "Disabling the advisory lock and the revalidation makes the critical race test fail with the login resolving successfully.",
+        "Removing only the digest fingerprint while keeping the timestamp comparison makes two credential-version tests fail, including the recycled-timestamp case."
+      ]
+    },
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-08",
+    "acceptanceScope": "owner_accepted_hosted_verified",
+    "closed": true,
+    "closedAt": "2026-10-08",
+    "acceptanceBoundedToSecurePasswordRecovery": true,
+    "documentationClosure": {
+      "date": "2026-10-08",
+      "files": ["PROJECT_STATE.md", "project-state.json", "tasks/CURRENT.md"],
+      "commitMessage": "docs: close Stage 2.5 hosted validation",
+      "authorizedBy": "Project owner",
+      "implementationFilesChanged": false,
+      "testsChanged": false,
+      "schemaMigrationsDependenciesLockfileConfigCiChanged": false,
+      "workflowMarkedGreen": false,
+      "advisoriesMarkedResolved": false
+    },
+    "acceptedGuarantees": {
+      "sharedAdvisoryLock": "Login and password reset acquire the same transaction-scoped pg_advisory_xact_lock(hashtextextended(user_id, 0)) on the same transaction client that performs their protected writes. The key derivation exists in exactly one shared helper.",
+      "argon2OutsideLock": "Argon2id verification runs outside the lock, so a 64 MiB three-iteration allocation is never held under it and concurrent logins are not serialised by hashing.",
+      "loginRevalidatesUnderLock": "Login revalidates the credential under the lock before session creation, comparing both passwordChangedAt and a SHA-256 fingerprint of the stored digest. The digest itself is never returned and never logged.",
+      "atomicReset": "Password replacement, recovery-token consumption, outstanding-token invalidation, and session revocation are atomic in one transaction: all commit or all roll back.",
+      "sessionsRevokedOnReset": true,
+      "noSessionCreatedByRecovery": true,
+      "inflightRequestsNotCanceled": "A password reset does not cancel an HTTP request that was already authorized. Revocation affects subsequent validation only.",
+      "broaderConcurrencyNotClaimed": "No concurrency guarantee beyond the above is claimed."
+    },
+    "unresolvedRisksConfirmedAtAcceptance": {
+      "date": "2026-10-08",
+      "perUserLoginSerialization": "Concurrent logins for one user serialise on the advisory lock for the in-transaction revalidation and insert. That section performs no Argon2id work, so the window is short, but it is a per-user serialisation point.",
+      "advisoryLockScope": "Advisory-lock coordination applies only to participating writers. Any future session-creation path must acquire the same lock.",
+      "noProductionEmailProvider": "No real mail provider is authorized or configured.",
+      "recoveryUnavailableInProduction": "API_PASSWORD_RECOVERY_DELIVERY_MODE defaults to disabled and development-only is refused under NODE_ENV=production, so recovery is not usable in production.",
+      "recoveryEmailFlooding": "Issuance is unbounded, so a known address can be flooded.",
+      "tokenRequestAbuse": "Each issuance supersedes earlier tokens, so repeated requests can invalidate a victim outstanding token.",
+      "tokenBruteForce": "Bounded only by 256-bit entropy and the 30-minute lifetime.",
+      "argon2ResourceExhaustion": "Both recovery endpoints and login can trigger a 64 MiB Argon2id operation and none is throttled. This is the most direct availability risk.",
+      "noComprehensiveRateLimiting": "Stage 2.6 owns rate limiting; none exists to reuse.",
+      "publicDeploymentProhibited": true,
+      "deferredCredentialedCors": "Not implemented; the contract is same-origin only.",
+      "deferredBroaderCsrfDesign": "Exact-Origin checking covers these two routes; a session-bound token remains deferred.",
+      "infrastructurePrismaCiPlatformFollowUps": "All previously documented items preserved unchanged.",
+      "nodeForgeGHSA86w9Cpqp85rv": "unresolved; installed; no patched upstream release",
+      "bracesGHSAVfj7CjwP6xm": "unresolved; installed; no patched upstream release",
+      "noResolutionsInvented": true
+    }
   }
 }
