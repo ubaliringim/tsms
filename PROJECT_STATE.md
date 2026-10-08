@@ -4,7 +4,7 @@ Project: TSMS - TeamStack School Management System
 
 Company: TeamStack Technologies LTD
 
-Updated: 2026-10-07
+Updated: 2026-10-08
 
 Phase: Foundation
 
@@ -12,13 +12,13 @@ Stage: 2 - Authentication & Identity
 
 Stage status: AUTHORIZED, not accepted. Owner approved Specification v1.0.
 
-Current substage: 2.1 - Identity Schema & Migration (ACCEPTED / HOSTED VERIFIED / CLOSED). Authorization is limited to 2.1.
+Current substage: 2.2 - Password Credential Service (LOCALLY VALIDATED / READY FOR OWNER REVIEW; NOT ACCEPTED). Stage 2.1 remains ACCEPTED / HOSTED VERIFIED / CLOSED.
 
 Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Next substage: 2.2 - Password Credential Service. NOT authorized; hard stop after 2.1.
+Next substage: 2.3 - Session Foundation. NOT STARTED / UNAUTHORIZED.
 
 Accepted capabilities: PostgreSQL local infrastructure, Redis local infrastructure, pgvector extension foundation, Prisma 7 database foundation, packages/database, packages/redis, migration workflow, database and Redis lifecycle handling, API and worker liveness/readiness separation, integration-test infrastructure, test-database safety controls, Docker Compose workflow, fresh-state reproducibility, the Stage 1 CI workflow, the three Prisma dependency security remediations, the temporary InfrastructureProbe scaffolding, and the smoke-test readiness extensions. The Stage 1 known issues were reviewed and accepted as non-blocking.
 
@@ -34,15 +34,15 @@ Closure validation (2026-10-07) found and fixed two real Stage 1 defects before 
 
 Stage 2.1 implementation: six global identity persistence models, native UUID columns with Prisma UUIDv7 defaults, unique normalized email and hash fields, one credential per user, explicit restrictive foreign keys, lifecycle timestamps, and a new forward migration. InfrastructureProbe is retained for independent Stage 1 regression tests. No accepted migration is changed. Validation passed: 47 unit/toolchain tests, 43 integration tests (26 new), 16 smoke assertions, builds, mobile dependency check/export, and a fresh three-migration replay with no schema drift. The audit still fails on exactly the known two high advisories. See tasks/CURRENT.md for commands, outcomes, and limitations.
 
-Not implemented: authentication behavior, password hashing, login/logout, sessions/cookies/middleware, token generation or consumption, recovery/email delivery, UI, tenants, memberships, roles, permissions, or other product functionality. No authentication dependencies added.
+Not implemented: HTTP authentication behavior, login/logout, sessions/cookies/middleware, token generation or consumption, recovery/email delivery, UI, tenants, memberships, roles, permissions, or other product functionality. Stage 2.2 adds only the Argon2 password dependency.
 
 Version-control handoff: owner authorized committing the ten reviewed Stage 2.1/state files as `feat: add authentication identity schema` and pushing main to origin after all eight boundary checks pass. All eight passed, including a refreshed audit with exactly the two known high advisories. Hosted verification was pending at commit preparation; the completed result is recorded below.
 
 Validation limitation: forced parallel checking exposed concurrent Prisma generation in the existing build/typecheck scripts (EEXIST). The uncached serial check and ordinary default check passed; task configuration is unchanged. Track coordinated generation as a separate tooling follow-up. Hosted Stage 2.1 validate passed; native device/store builds have not run.
 
-Exact next action: hard stop after this documentation closure commit and normal push. Stage 2.2 is NOT STARTED and remains unauthorized; await explicit owner authorization.
+Exact next action: owner reviews Stage 2.2 implementation and diff. Do not commit, push, deploy, or start Stage 2.3.
 
-DO NOT: start Stage 2.2 or later, implement authentication behavior or tenant/RBAC functionality, install authentication dependencies, suppress or weaken audit controls, mark accepted advisories resolved, rewrite accepted migrations, amend accepted commits, force push, or deploy.
+DO NOT: start Stage 2.3 or later, implement HTTP authentication/session/recovery/tenant/RBAC behavior, modify schema or migrations, weaken audit controls, commit, push, or deploy.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -56,6 +56,12 @@ Commit `61331fb2c02c3846b92343f50289bbd4e604a1be` (`feat: add authentication ide
 
 Evidence: gh run watch completed with exit 1 for the expected audit failure; gh run view JSON and logs confirmed both jobs and test counts. Local ignored evidence is in artifacts/stage21/hosted-result.json and hosted-run.log. The working tree was clean immediately after push, with local HEAD and origin/main both at the commit above. The owner subsequently authorized this documentation closure checkpoint, limited to PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md, with commit subject `docs: close Stage 2.1 hosted validation` and a normal push. No implementation changes or amendment are authorized.
 
-Stage 1 remains ACCEPTED. Stage 2.1 is OWNER ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 as a whole is NOT accepted. Stage 2.2 has NOT started and remains unauthorized. No deployment, tenant membership, or RBAC work occurred. **Do not start Stage 2.2 without explicit owner authorization.**
+Stage 1 remains ACCEPTED. Stage 2.1 is OWNER ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 as a whole is NOT accepted. Stage 2.2 is now separately authorized; Stage 2.3 is NOT STARTED / UNAUTHORIZED. No deployment, tenant membership, or RBAC work occurred. **Do not start Stage 2.3 without explicit owner authorization.**
 
-Owner closure decision (2026-10-07): Stage 2.1 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 1 remains ACCEPTED; Stage 2 overall remains NOT ACCEPTED. Stage 2.2 is NOT STARTED / UNAUTHORIZED. Closure scope is only these three state files; all known follow-ups remain open. Validate formatting, JSON state consistency and preserved follow-ups, the exact three-file diff, and `git diff --check` before committing. Verify branch synchronization and clean status after the normal push.
+Historical Stage 2.1 closure remains unchanged; see tasks/completed/stage-2-1-identity.md. Stage 2.2 authorization supersedes the earlier hard stop for 2.2 only.
+
+Stage 2.2 local validation (2026-10-08): internal password policy, Argon2id hashing/verification/rehash detection, and Prisma credential creation/replacement are implemented. Policy is 15-128 Unicode code points without transformation. Argon2id uses 65536 KiB, three iterations, one lane, and 32-byte output. Frozen install, generation, formatting, lint, typecheck, 62 unit/toolchain tests, 51 integration tests, seven build tasks, aggregate check, 16 smoke assertions, mobile check/export, and diff check passed. Existing Turbo caches were used where applicable; focused Stage 2.2 tests ran separately (15 unit, eight integration). Audits before/after installation and at completion report exactly the two accepted high advisories. No migration or HTTP/session/tenant/RBAC functionality was introduced. All changes remain uncommitted for owner review; hosted Stage 2.2 validation has not run. See docs/security/PASSWORD_CREDENTIALS.md and tasks/CURRENT.md.
+
+## Final review and commit authorization
+
+The owner authorized repairing the two archived Markdown links, final validation, committing the reviewed Stage 2.2 files as `feat: add password credential service`, and pushing main normally if all checks pass. Both link targets exist and all relative Markdown links in changed documentation/state files resolve. Production Argon2 costs are unchanged and frozen; additional malformed/excessive-cost probes passed without emitting credential material. No schema, migration, logging, HTTP authentication, or tenant/RBAC expansion. The refreshed audit contains only the two accepted high advisories. This authorization supersedes the earlier uncommitted-review checkpoint instructions above. Record actual hosted results afterward and leave those state updates uncommitted; no second documentation commit, amendment, force push, deployment, or Stage 2.3 work is authorized.

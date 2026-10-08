@@ -2,7 +2,7 @@
   "project": "TSMS",
   "fullName": "TeamStack School Management System",
   "company": "TeamStack Technologies LTD",
-  "updatedAt": "2026-10-07",
+  "updatedAt": "2026-10-08",
   "phase": "foundation",
   "stage": "2",
   "stageName": "Authentication & Identity",
@@ -15,14 +15,14 @@
     "acceptedAt": "2026-10-07",
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
-  "task": "2.1",
-  "status": "closed_hosted_verification_complete",
-  "reviewStatus": "owner_accepted_hosted_verified",
+  "task": "2.2",
+  "status": "locally_validated_ready_for_owner_review",
+  "reviewStatus": "awaiting_owner_review",
   "nextTask": {
-    "id": "2.2",
-    "name": "Password Credential Service",
-    "implementationAuthorized": false,
-    "status": "not_started"
+    "id": "2.3",
+    "name": "Session Foundation",
+    "status": "not_started",
+    "implementationAuthorized": false
   },
   "nextPlannedStage": {
     "stage": "3",
@@ -31,7 +31,7 @@
   },
   "blocked": false,
   "blockers": [],
-  "baselineCommit": "a4448fa",
+  "baselineCommit": "221f17aaab495c9df92548b351eff53ab8c363b5",
   "infrastructure": {
     "compose": "infrastructure/docker-compose.yml",
     "postgres": {
@@ -227,34 +227,23 @@
   "validation": {
     "frozenInstall": "pass",
     "prismaGenerate": "pass",
-    "prismaValidate": "pass",
-    "prismaFormatCheck": "pass",
     "formatCheck": "pass",
     "lint": "pass",
-    "typecheck": "pass",
+    "typecheck": "pass_11_tasks",
     "test": "pass",
-    "testCount": 47,
-    "build": "pass",
-    "check": "pass_default_configuration",
-    "forcedSequentialCheck": "pass_TURBO_FORCE_true_TURBO_CONCURRENCY_1",
-    "forcedParallelCheck": "fail_concurrent_prisma_generation_EEXIST_followup_recorded",
+    "testCount": 62,
+    "build": "pass_7_tasks",
+    "check": "pass_default_configuration_with_Turbo_cache",
     "integrationTests": "pass",
-    "integrationTestCount": 43,
-    "newIdentityIntegrationTests": 26,
-    "databaseIntegrationTests": 35,
-    "redisIntegrationTests": 8,
-    "skippedIntegrationTests": 0,
-    "smoke": "pass_16_assertions_dependencies_up",
+    "integrationTestCount": 51,
+    "newPasswordIntegrationTests": 8,
+    "smoke": "pass_16_assertions",
     "mobileCompatibility": "pass",
-    "mobileExport": "pass_android",
-    "prismaMigrateStatus": "pass_3_applied_none_pending_on_fresh_test_database",
-    "prismaDeployToFreshDatabase": "pass_all_3_migrations_idempotent_redeploy",
-    "prismaSchemaDrift": "pass_empty_diff",
-    "dependencyAudit": "fail_exactly_2_known_high_no_new_advisories",
+    "mobileExport": "pass_android_578_modules",
+    "dependencyAudit": "expected_fail_exactly_2_known_high_before_after_and_final",
     "diffCheck": "pass",
-    "hostedCI": "validate_pass_security_audit_expected_fail_at_61331fb2c02c3846b92343f50289bbd4e604a1be",
-    "nativeDeviceBuild": "not_run",
-    "finalInfrastructureStatus": "postgres_and_redis_healthy_loopback_existing_services_preserved"
+    "securityReview": "pass",
+    "hostedCI": "not_run_for_uncommitted_stage_2_2"
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
@@ -273,20 +262,14 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Documentation closure checkpoint contains only PROJECT_STATE.md, project-state.json, and tasks/CURRENT.md. Implementation is committed and pushed at 61331fb2c02c3846b92343f50289bbd4e604a1be. Closure commit/push authorized; verify clean status afterward.",
-  "nextAction": "Hard stop after documentation closure commit and normal push. Stage 2 overall is NOT accepted. Stage 2.2 is NOT STARTED and remains unauthorized; await explicit owner authorization.",
+  "workingTree": "Seventeen reviewed Stage 2.2 files prepared for owner-authorized commit and normal push after final validation. Hosted result pending.",
+  "nextAction": "Commit reviewed Stage 2.2 as feat: add password credential service, push main normally, inspect hosted CI, record results without a second documentation commit, then hard stop.",
   "doNot": [
-    "Start Stage 2.2 or later without explicit owner authorization",
-    "Implement authentication behavior, hashing, endpoints, middleware, cookies, UI, tenants, memberships, or RBAC",
-    "Install authentication dependencies",
-    "Amend accepted commits, force push, or deploy",
-    "Suppress audit failures or weaken security controls",
-    "Mark the accepted Stage 0 advisories resolved while the packages remain installed",
-    "Broaden the dependency overrides",
-    "Introduce a security-exception framework without its own authorized task",
-    "Rewrite accepted migration history",
-    "Run pnpm db:reset or pnpm infra:reset against anything but local development",
-    "Deploy to production"
+    "Start Stage 2.3 or later without owner authorization",
+    "Amend, force push, deploy, or create a second documentation commit",
+    "Implement login/session/HTTP authentication, recovery, tenant membership, or RBAC",
+    "Modify accepted schema or migrations",
+    "Suppress or weaken the dependency audit"
   ],
   "stageAcceptedAt": null,
   "acceptedBy": null,
@@ -306,7 +289,7 @@
       "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
     }
   ],
-  "activeTask": "Stage 2.1 - Identity Schema & Migration",
+  "activeTask": "Stage 2.2 - Password Credential Service",
   "acceptedCapabilities": [
     "PostgreSQL local infrastructure",
     "Redis local infrastructure",
@@ -331,7 +314,7 @@
     "accepted": false,
     "specification": "Authentication & Identity Specification v1.0",
     "specificationApprovedBy": "Project owner",
-    "implementationScope": "2.1 Identity Schema & Migration only"
+    "implementationScope": "2.2 Password Credential Service only"
   },
   "postAcceptanceCIRepair": {
     "date": "2026-10-07",
@@ -478,23 +461,16 @@
     "note": "Acceptance does not resolve any dependency advisory. The two Stage 0 advisories remain installed and unresolved, and pnpm audit --audit-level=high remains failing."
   },
   "currentSubstage": {
-    "id": "2.1",
-    "name": "Identity Schema & Migration",
-    "status": "closed_hosted_verification_complete",
-    "accepted": true,
-    "acceptedLocally": true,
-    "acceptedBy": "Project owner",
-    "acceptedAt": "2026-10-07",
-    "acceptanceScope": "owner_accepted_hosted_verified",
-    "hostedVerificationComplete": true,
-    "closed": true,
-    "closedAt": "2026-10-07"
+    "id": "2.2",
+    "name": "Password Credential Service",
+    "status": "locally_validated_ready_for_owner_review",
+    "accepted": false
   },
   "authorization": {
     "stage": "2",
     "specificationVersion": "1.0",
     "authorizedBy": "Project owner",
-    "scope": "2.1 Identity Schema & Migration only",
+    "scope": "2.2 Password Credential Service only",
     "laterSubstagesAuthorized": false
   },
   "stage1ClosureValidation": {
@@ -524,15 +500,22 @@
   },
   "changedFiles": [
     "PROJECT_STATE.md",
+    "apps/api/package.json",
+    "apps/api/src/identity/password-credential.service.ts",
+    "apps/api/src/identity/password-error.ts",
+    "apps/api/src/identity/password-hasher.ts",
+    "apps/api/src/identity/password-policy.ts",
+    "apps/api/tests/password.integration.test.mjs",
+    "apps/api/tests/password.test.mjs",
+    "apps/api/vitest.config.ts",
+    "apps/api/vitest.integration.config.ts",
+    "docs/security/PASSWORD_CREDENTIALS.md",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
     "project-state.json",
     "tasks/CURRENT.md",
     "tasks/ROADMAP.md",
-    "docs/architecture/DATABASE.md",
-    "packages/database/prisma/schema.prisma",
-    "packages/database/prisma/migrations/20261007210000_identity_schema/migration.sql",
-    "packages/database/tests/database.integration.test.mjs",
-    "packages/database/tests/identity.integration.test.mjs",
-    "tasks/completed/stage-1-hosted-ci-repair.md"
+    "tasks/completed/stage-2-1-identity.md"
   ],
   "stage21": {
     "status": "closed_hosted_verification_complete",
@@ -624,6 +607,88 @@
       "push": "main_to_origin_success_without_force"
     },
     "closed": true,
-    "closedAt": "2026-10-07"
+    "closedAt": "2026-10-07",
+    "record": "tasks/completed/stage-2-1-identity.md",
+    "changedFiles": [
+      "PROJECT_STATE.md",
+      "project-state.json",
+      "tasks/CURRENT.md",
+      "tasks/ROADMAP.md",
+      "docs/architecture/DATABASE.md",
+      "packages/database/prisma/schema.prisma",
+      "packages/database/prisma/migrations/20261007210000_identity_schema/migration.sql",
+      "packages/database/tests/database.integration.test.mjs",
+      "packages/database/tests/identity.integration.test.mjs",
+      "tasks/completed/stage-1-hosted-ci-repair.md"
+    ]
+  },
+  "stage22": {
+    "status": "locally_validated_ready_for_owner_review",
+    "accepted": false,
+    "dependency": "argon2@0.45.1",
+    "parameters": {
+      "memoryKiB": 65536,
+      "timeCost": 3,
+      "parallelism": 1,
+      "hashLengthBytes": 32
+    },
+    "policy": {
+      "minCodePoints": 15,
+      "maxCodePoints": 128,
+      "transformations": false
+    },
+    "migrationRequired": false,
+    "performance": {
+      "hashMs": 181,
+      "verifyMs": 189,
+      "assertedInCI": false
+    },
+    "focusedTests": {
+      "unit": 15,
+      "integration": 8
+    },
+    "hostedVerification": "not_run_uncommitted_owner_review_required",
+    "followUps": [
+      "Hosted Linux/native dependency verification after owner review",
+      "Capacity and verification-compatibility review when evolving password policy or Argon2 costs"
+    ],
+    "finalReview": {
+      "documentationLinks": "two_archive_links_repaired_all_relative_links_checked",
+      "security": "pass_frozen_parameters_hash_bounds_atomic_replacement_no_logging_or_scope_expansion",
+      "audit": "exactly_two_known_high",
+      "hosted": "pending"
+    }
+  },
+  "stage21Validation": {
+    "frozenInstall": "pass",
+    "prismaGenerate": "pass",
+    "prismaValidate": "pass",
+    "prismaFormatCheck": "pass",
+    "formatCheck": "pass",
+    "lint": "pass",
+    "typecheck": "pass",
+    "test": "pass",
+    "testCount": 47,
+    "build": "pass",
+    "check": "pass_default_configuration",
+    "forcedSequentialCheck": "pass_TURBO_FORCE_true_TURBO_CONCURRENCY_1",
+    "forcedParallelCheck": "fail_concurrent_prisma_generation_EEXIST_followup_recorded",
+    "integrationTests": "pass",
+    "integrationTestCount": 43,
+    "newIdentityIntegrationTests": 26,
+    "databaseIntegrationTests": 35,
+    "redisIntegrationTests": 8,
+    "skippedIntegrationTests": 0,
+    "smoke": "pass_16_assertions_dependencies_up",
+    "mobileCompatibility": "pass",
+    "mobileExport": "pass_android",
+    "prismaMigrateStatus": "pass_3_applied_none_pending_on_fresh_test_database",
+    "prismaDeployToFreshDatabase": "pass_all_3_migrations_idempotent_redeploy",
+    "prismaSchemaDrift": "pass_empty_diff",
+    "dependencyAudit": "fail_exactly_2_known_high_no_new_advisories",
+    "diffCheck": "pass",
+    "hostedCI": "validate_pass_security_audit_expected_fail_at_61331fb2c02c3846b92343f50289bbd4e604a1be",
+    "nativeDeviceBuild": "not_run",
+    "finalInfrastructureStatus": "postgres_and_redis_healthy_loopback_existing_services_preserved"
   }
 }

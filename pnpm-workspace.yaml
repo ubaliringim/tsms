@@ -7,6 +7,9 @@ engineStrict: true
 strictPeerDependencies: true
 minimumReleaseAgeStrict: true
 allowBuilds:
+  # argon2@0.45.1: cross-env ZERO_AR_DATE=1 node-gyp-build loads bundled
+  # Node-API prebuilds, or compiles the upstream Argon2 binding when necessary.
+  argon2: true
   esbuild: true
   sharp: true
   unrs-resolver: true
