@@ -11,6 +11,9 @@ const environment = {
   API_PORT: 4000,
   DATABASE_URL: 'postgresql://tsms:hunter2@127.0.0.1:5499/tsms',
   REDIS_URL: 'redis://:hunter2@127.0.0.1:6399',
+  // Stage 2.4 requires an explicit allowlist. These tests never call an authentication route, so
+  // the value only has to satisfy startup validation.
+  API_TRUSTED_ORIGINS: ['http://127.0.0.1:3000'],
 };
 
 describe('API HTTP boundary', () => {

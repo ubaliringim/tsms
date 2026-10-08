@@ -57,3 +57,34 @@ Stage 1 adds PostgreSQL, Redis, and Prisma. It adds no authentication, no tenant
 Still absent and still required before launch: authentication, authorization, tenant isolation, audit logging,
 secret management, TLS termination, rate and payload limits, backups, and restore verification. Stage 1 does not
 move any of these closer to done.
+
+## Stage 2.4 authentication boundary
+
+Stage 2.4 adds the first HTTP authentication interface: `POST /auth/login`, `GET /auth/me`, and
+`POST /auth/logout`. The accepted shape is [the Stage 2.4 authentication contract](../security/AUTH_API.md).
+It adapts the accepted password and session primitives to HTTP and introduces no authorization of
+any kind: there is still no tenant, school, membership, role, or permission concept.
+
+- **Identity and authorization stay separate.** A valid session proves who the caller is. It grants
+  nothing else, and no endpoint in this stage reads or checks school context.
+- **The bearer secret never enters a body, a URL, or a log.** The opaque session token travels only
+  in an `HttpOnly` cookie. Nothing else about it - hash, session id, Argon2id parameters - is
+  returned, and the token is never placed where a client or proxy could log it.
+- **Cookie security is derived from validated configuration, not toggled.** `__Host-` and `Secure`
+  in production, plain-HTTP-compatible name on loopback in development, no `Domain`, `Path=/`,
+  `SameSite=Lax`. There is no setting that disables `Secure` in production, and a duplicate
+  session cookie is rejected instead of resolved.
+- **Cross-site request forgery is addressed on the routes that need it.** The two state-changing
+  routes require an `Origin` header that matches an explicit startup-validated allowlist, compared
+  exactly. No trusted value is derived from `Host` or any forwarded header, and no wildcard or
+  suffix match exists.
+- **Authentication failures are indistinguishable.** Unknown account, wrong password, absent
+  credential, and disabled account share one status, body, and header set. Failed paths still pay
+  the Argon2id cost against a fixed decoy digest, so a single request does not reveal which
+  condition occurred. This is not a claim of constant-time HTTP authentication.
+- **Every authentication response is uncacheable**, including error responses.
+- **Credentialed CORS is not enabled.** No cross-origin response is exposed to a browser, so this
+  stage's contract is same-origin only. Adding credentialed origins is a later explicit decision.
+- **There is no rate limiting.** Password verification is reachable over HTTP without throttling.
+  This is the known gap that makes Stage 2.4 unsuitable for direct public-internet exposure, and
+  Stage 2.6 owns the fix.

@@ -24,6 +24,11 @@ const localInfrastructure = {
   DATABASE_URL:
     process.env.DATABASE_URL ?? 'postgresql://tsms:tsms_local_development@127.0.0.1:5432/tsms',
   REDIS_URL: process.env.REDIS_URL ?? 'redis://:tsms_local_redis@127.0.0.1:6379',
+  // The API requires an explicit trusted-origin allowlist in every environment
+  // (Stage 2.4). Same pattern as the URLs above: prefer the real exported value,
+  // fall back to the documented loopback development origins.
+  API_TRUSTED_ORIGINS:
+    process.env.API_TRUSTED_ORIGINS ?? 'http://127.0.0.1:3000,http://127.0.0.1:3001',
 };
 // Asserts that these values are not echoed by any failure path.
 const infrastructureSecrets = [
@@ -134,8 +139,16 @@ try {
   await rejectsInvalidEnvironment('worker', { WORKER_HEALTH_PORT: 'private-invalid-value' });
   await rejectsMissingInfrastructureUrl('api', 'DATABASE_URL');
   await rejectsMissingInfrastructureUrl('api', 'REDIS_URL');
+  await rejectsMissingInfrastructureUrl('api', 'API_TRUSTED_ORIGINS');
   await rejectsMissingInfrastructureUrl('worker', 'DATABASE_URL');
   await rejectsMissingInfrastructureUrl('worker', 'REDIS_URL');
+  // Stage 2.4 origin allowlist: absent, empty, or malformed must fail startup too.
+  await rejectsMalformedInfrastructureUrl('api', 'API_TRUSTED_ORIGINS', 'not-a-valid-url');
+  await rejectsMalformedInfrastructureUrl(
+    'api',
+    'API_TRUSTED_ORIGINS',
+    'https://trusted.example.com/app',
+  );
   await rejectsMalformedInfrastructureUrl('api', 'DATABASE_URL', 'not-a-valid-url');
   await rejectsMalformedInfrastructureUrl('api', 'REDIS_URL', 'not-a-valid-url');
   await rejectsMalformedInfrastructureUrl('worker', 'DATABASE_URL', 'not-a-valid-url');

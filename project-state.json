@@ -15,12 +15,12 @@
     "acceptedAt": "2026-10-07",
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
-  "task": "2.3",
-  "status": "accepted_hosted_verified_closed",
-  "reviewStatus": "complete",
+  "task": "2.4",
+  "status": "in_progress_locally_validated",
+  "reviewStatus": "awaiting_owner_review",
   "nextTask": {
-    "id": "2.4",
-    "name": "Login orchestration",
+    "id": "2.5",
+    "name": "Abuse protection and rate limiting",
     "status": "not_started",
     "implementationAuthorized": false
   },
@@ -221,7 +221,7 @@
     "broadIgnoreRules": false,
     "exceptionFrameworkIntroduced": false,
     "newUnreviewedHighFindingsAcceptable": false,
-    "ciBehavior": "The raw audit runs as its own security-audit job in CI so a functional regression and the known security-policy gate are separately attributable. That job still fails, so the workflow reports red.",
+    "ciBehavior": "The raw audit runs as its own security-audit job in CI so a functional regression and the known security-policy gate are separately attributable. That job still fails, so the workflow reports red. Stage 2.4 adds no dependency and no new finding.",
     "futureTask": "A controlled mechanism distinguishing reviewed temporary exceptions from new vulnerabilities, without hiding the raw audit result. Still not built."
   },
   "validation": {
@@ -264,15 +264,16 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Stage 2.3 accepted and closed by the project owner. Documentation closure commit docs: close Stage 2.3 hosted validation covers exactly PROJECT_STATE.md, project-state.json, tasks/CURRENT.md and docs/security/DEPENDENCY_RISK_REGISTER.md.",
-  "nextAction": "Hard stop. Stage 2.3 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall NOT ACCEPTED; Stage 2.4 NOT STARTED / UNAUTHORIZED and requires separate owner authorization.",
+  "workingTree": "Stage 2.4 changes are uncommitted, unstaged, and unpushed, pending owner review. HEAD and origin/main both remain at 6df160a5cdd161793ce43ad0fae34235c999a84f.",
+  "nextAction": "Owner reviews the Stage 2.4 implementation, HTTP contract, and security findings. Stage 2 overall NOT ACCEPTED; Stage 2.5 NOT STARTED / UNAUTHORIZED.",
   "doNot": [
-    "Start Stage 2.4 or later without explicit owner authorization",
-    "Add HTTP authentication, login orchestration, cookies, JWTs, recovery, tenant membership, or RBAC",
+    "Start Stage 2.5 or later without explicit owner authorization",
+    "Add registration, password reset, refresh tokens, logout-all, or rate limiting",
+    "Add tenant, school, membership, role, or permission behaviour",
+    "Enable credentialed CORS",
     "Modify accepted schema or migrations",
     "Suppress or weaken the dependency audit",
-    "Mark the overall workflow green or either advisory resolved",
-    "Amend, force-push, or deploy"
+    "Commit, push, amend, force-push, or deploy"
   ],
   "stageAcceptedAt": null,
   "acceptedBy": null,
@@ -321,7 +322,7 @@
     "specification": "Authentication & Identity Specification v1.0",
     "specificationApprovedBy": "Project owner",
     "acceptedSubstages": ["2.1", "2.2", "2.3"],
-    "implementationScope": "2.1, 2.2 and 2.3 accepted; 2.4 and later unauthorized"
+    "implementationScope": "2.1, 2.2 and 2.3 accepted; 2.4 in progress; 2.5 and later unauthorized"
   },
   "postAcceptanceCIRepair": {
     "date": "2026-10-07",
@@ -468,20 +469,19 @@
     "note": "Acceptance does not resolve any dependency advisory. The two Stage 0 advisories remain installed and unresolved, and pnpm audit --audit-level=high remains failing."
   },
   "currentSubstage": {
-    "id": "2.3",
-    "name": "Secure Session Foundation",
-    "status": "accepted_hosted_verified_closed",
-    "accepted": true,
-    "acceptedBy": "Project owner",
-    "acceptedAt": "2026-10-08",
-    "acceptedCommit": "c75361e85e5315b8eb17646da2825cfd9eea7b91",
-    "hostedRunId": 37733953331
+    "id": "2.4",
+    "name": "Login, Current User and Logout API",
+    "status": "in_progress_locally_validated",
+    "accepted": false,
+    "acceptedBy": null,
+    "acceptedAt": null,
+    "hostedVerified": false
   },
   "authorization": {
     "stage": "2",
     "specificationVersion": "1.0",
     "authorizedBy": "Project owner",
-    "scope": "2.3 Secure Session Foundation only",
+    "scope": "2.4 Login, Current User and Logout API only",
     "laterSubstagesAuthorized": false
   },
   "stage1ClosureValidation": {
@@ -915,6 +915,162 @@
     "2.1": "accepted_hosted_verified_closed",
     "2.2": "accepted_hosted_verified_closed",
     "2.3": "accepted_hosted_verified_closed",
-    "2.4": "not_started_unauthorized"
+    "2.4": "in_progress_locally_validated_not_accepted",
+    "2.5": "not_started_unauthorized"
+  },
+  "stage24": {
+    "status": "in_progress_locally_validated",
+    "accepted": false,
+    "hostedVerified": false,
+    "commit": null,
+    "contract": "docs/security/AUTH_API.md",
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/auth/login",
+        "success": 200,
+        "failures": [400, 401, 403, 413]
+      },
+      {
+        "method": "GET",
+        "path": "/auth/me",
+        "success": 200,
+        "failures": [401]
+      },
+      {
+        "method": "POST",
+        "path": "/auth/logout",
+        "success": 204,
+        "failures": [403]
+      }
+    ],
+    "files": [
+      "apps/api/src/identity/auth.service.ts",
+      "apps/api/src/identity/auth.controller.ts",
+      "apps/api/src/identity/auth.module.ts",
+      "apps/api/src/identity/auth-cookie.ts",
+      "apps/api/src/identity/trusted-origin.guard.ts",
+      "apps/api/src/identity/auth-body-limit.ts",
+      "apps/api/src/identity/auth-exception.filter.ts",
+      "apps/api/tests/auth.test.mjs",
+      "apps/api/tests/auth.integration.test.mjs",
+      "docs/security/AUTH_API.md"
+    ],
+    "configurationAdded": {
+      "variable": "API_TRUSTED_ORIGINS",
+      "requiredInEveryEnvironment": true,
+      "shape": "comma-separated absolute origins, normalised, deduplicated",
+      "wiredInto": [
+        "packages/config/src/env.ts",
+        "turbo.json globalEnv",
+        ".env.example",
+        ".github/workflows/ci.yml",
+        "scripts/smoke.mjs"
+      ]
+    },
+    "securityControls": {
+      "tokenInCookieOnly": true,
+      "tokenInJsonOrUrlOrLog": false,
+      "cookieHttpOnly": true,
+      "cookieSameSite": "Lax",
+      "cookieSecureInProduction": true,
+      "cookiePrefixInProduction": "__Host-tsms_session",
+      "cookieNameInDevelopmentAndTest": "tsms_session",
+      "cookiePath": "/",
+      "cookieDomain": "absent",
+      "cookieMaxAgeBoundedBySessionExpiry": true,
+      "duplicateSessionCookieRejected": true,
+      "originAllowlist": "exact_match_required",
+      "originRequiredOnStateChangingRoutes": true,
+      "missingOriginFailsClosed": true,
+      "trustedOriginDerivedFromRequestHeaders": false,
+      "credentialedCorsEnabled": false,
+      "cacheControlOnAllAuthResponses": "no-store",
+      "varyOriginOnAllAuthResponses": true,
+      "genericAuthenticationFailureBody": {
+        "statusCode": 401,
+        "error": "authentication_failed"
+      },
+      "indistinguishableFailureConditions": [
+        "unknown_email",
+        "wrong_password",
+        "missing_password_credential",
+        "disabled_user"
+      ],
+      "enumerationTimingMitigation": "failed paths verify a committed Argon2id decoy digest with production parameters; not a constant-time claim",
+      "passwordOrHashNeverReturned": true,
+      "tenantOrRoleInformationReturned": false,
+      "bodySizeLimitBytes": 4096
+    },
+    "explicitlyNotImplemented": [
+      "registration or public signup",
+      "password reset, recovery, or email verification",
+      "refresh tokens",
+      "logout-all or account-wide revocation endpoints",
+      "session listing or management",
+      "authentication event recording",
+      "JWT or any additional authentication framework",
+      "rate limiting or abuse protection",
+      "credentialed CORS",
+      "client-side authentication state",
+      "tenant, school, membership, role, or permission behaviour",
+      "rehash-on-login"
+    ],
+    "knownRisks": [
+      "No rate limiting. Password verification is reachable over HTTP without throttling, so Stage 2.4 must not be exposed directly to the public internet. Stage 2.6 owns this.",
+      "The Origin allowlist is not proxy-aware; a TLS-terminating proxy must preserve the browser Origin.",
+      "Additional authenticated mutations will need a session-bound double-submit CSRF token; deliberately not built here.",
+      "A new session is created on each successful login, so a pre-login token is not carried forward, but an already-authenticated session token is not rotated.",
+      "Revoking one session does not affect a user other sessions or devices.",
+      "Credentialed CORS is not enabled, so the web and control applications on ports 3000 and 3001 cannot yet call the API from a browser. Wiring them requires a later explicit allowlist decision.",
+      "No AuthenticationEvent rows are written; event recording needs its own sanitized metadata contract."
+    ],
+    "defectsFoundAndFixedDuringReview": [
+      "new URL accepts a literal wildcard in a host, so https://*.example.com would have been stored as a trusted origin that can never match; host characters are now validated explicitly.",
+      "The exception filter matched a body-parser error type that Nest discards by re-wrapping the failure as BadRequestException, so a malformed-JSON parser message quoting the submitted fragment reached the client; detection is now by HTTP status as well.",
+      "The oversized-body 413 was derived from the adapter parser and was not reliably distinguishable from a malformed body; an explicit pre-parse Content-Length check now produces the documented 413 deterministically.",
+      "Unused import and a lint suppression were cleaned up."
+    ],
+    "validation": {
+      "frozenInstall": "pass",
+      "prismaGenerate": "pass",
+      "formatCheck": "pass",
+      "lint": "pass",
+      "typecheck": "pass_11_tasks",
+      "test": "pass_112_unit_toolchain",
+      "unitTests": 112,
+      "apiUnitTests": 73,
+      "focusedAuthUnitTests": 37,
+      "build": "pass_7_tasks",
+      "check": "pass_with_applicable_Turbo_cache",
+      "integrationTests": "pass_134_cases_zero_skipped",
+      "integrationTestCount": 134,
+      "apiIntegrationTests": 91,
+      "focusedAuthIntegrationTests": 66,
+      "smoke": "pass_19_assertions",
+      "mobileCompatibility": "pass",
+      "mobileExport": "pass_android_578_modules",
+      "diffCheck": "pass",
+      "dependencyAudit": "expected_fail_exactly_two_known_high_no_new_findings",
+      "hostedCI": "not_run_no_commit",
+      "unitBreakdown": {
+        "config": 22,
+        "redis": 4,
+        "database": 8,
+        "worker": 4,
+        "api": 73,
+        "nodeToolchain": 1
+      },
+      "countCorrection": "An earlier checkpoint recorded 109 unit/toolchain tests. The correct total is 112: the 74-test Stage 2.3 baseline plus 38 added by Stage 2.4 (37 focused auth unit tests and one new API_TRUSTED_ORIGINS configuration test). The earlier figure omitted three already-existing API unit tests. No test result changed; only the recorded total was wrong."
+    },
+    "unchanged": [
+      "accepted schema and migrations",
+      "dependencies and lockfile",
+      "dependency audit policy",
+      "Stage 2.2 password policy and Argon2id parameters",
+      "Stage 2.3 session primitive",
+      "health and readiness contracts",
+      "test-database safety guards"
+    ]
   }
 }

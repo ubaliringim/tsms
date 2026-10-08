@@ -12,13 +12,11 @@ Stage: 2 - Authentication & Identity
 
 Stage status: AUTHORIZED, not accepted. Owner approved Specification v1.0.
 
-Current substage: 2.3 - Secure Session Foundation (ACCEPTED / HOSTED VERIFIED / CLOSED, owner decision 2026-10-08). Stages 2.1 and 2.2 remain ACCEPTED / HOSTED VERIFIED / CLOSED.
-
 Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Next substage: 2.4 - Login orchestration. NOT STARTED / UNAUTHORIZED.
+Next substage: 2.5 - Abuse protection and rate limiting. NOT STARTED / UNAUTHORIZED.
 
 Accepted capabilities: PostgreSQL local infrastructure, Redis local infrastructure, pgvector extension foundation, Prisma 7 database foundation, packages/database, packages/redis, migration workflow, database and Redis lifecycle handling, API and worker liveness/readiness separation, integration-test infrastructure, test-database safety controls, Docker Compose workflow, fresh-state reproducibility, the Stage 1 CI workflow, the three Prisma dependency security remediations, the temporary InfrastructureProbe scaffolding, and the smoke-test readiness extensions. The Stage 1 known issues were reviewed and accepted as non-blocking.
 
@@ -40,11 +38,15 @@ Version-control handoff: owner authorized committing the ten reviewed Stage 2.1/
 
 Validation limitation: forced parallel checking exposed concurrent Prisma generation in the existing build/typecheck scripts (EEXIST). The uncached serial check and ordinary default check passed; task configuration is unchanged. Track coordinated generation as a separate tooling follow-up. Hosted Stage 2.1 validate passed; native device/store builds have not run.
 
-Stage 2.3 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Handoff record: tasks/CURRENT.md. No Stage 2.3 archive file has been created; only the four authorized documentation files changed in this closure.
+Stage 2.3 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Handoff record: tasks/CURRENT.md. No Stage 2.3 archive file has been created; only the four authorized documentation files changed in that closure.
 
-Exact next action: hard stop. Stage 2.3 documentation closure is the only authorized remaining work; Stage 2.4 requires separate owner authorization.
+Stage 2.4 status: IN PROGRESS / LOCALLY VALIDATED. Not accepted, not committed, not pushed, not deployed. Current substage. See tasks/CURRENT.md and docs/security/AUTH_API.md.
 
-DO NOT: start Stage 2.4 or later, add HTTP authentication/login/cookie/JWT/recovery/tenant/RBAC behavior, change accepted schema/migrations, weaken audits, amend or force-push, or deploy.
+Next substage: 2.5 - Abuse protection and rate limiting. NOT STARTED / UNAUTHORIZED.
+
+Exact next action: owner reviews the Stage 2.4 implementation, HTTP contract, and security findings. Changes remain uncommitted.
+
+DO NOT: start Stage 2.5 or later, add registration/reset/refresh/logout-all/rate limiting, add tenant or RBAC behaviour, enable credentialed CORS, change accepted schema/migrations, weaken audits, commit, push, or deploy without explicit authorization.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -111,3 +113,49 @@ Acceptance is bounded to the Stage 2.3 session primitives as implemented. The do
 Stage 0: ACCEPTED. Stage 1: ACCEPTED. Stage 2.1: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.2: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.3: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall: NOT ACCEPTED. Stage 2.4: NOT STARTED / UNAUTHORIZED. **HARD STOP.**
 
 Takeover review (2026-10-08) started from 333ee77, equal to origin/main with a clean tree, and revalidated every previous-agent claim rather than trusting it. All confirmed: focused suites, regression suites, smoke, mobile, and the unchanged two-high audit baseline. Three in-scope corrections were made, with no production code, schema, migration, dependency, or safety-guard change: an inaccurate claim about the UUID length check was corrected (it is redundant defence-in-depth; the anchored regex already rejects trailing line terminators, verified empirically against the compiled service); a unit test now pins the rejected identifier shapes across all four JavaScript line terminators and asserts a genuine UUID reaches the database; an integration test now covers the documented disable/re-enable behaviour, which previously had no coverage; and tasks/completed/README.md was updated to index the hosted CI repair, Stage 2.1, and the newly archived Stage 2.2 handoff, and to state that Stage 2 as a whole is not accepted. Stage 0, Stage 1, Stage 2.1 and Stage 2.2 acceptance are untouched. All work remains uncommitted; nothing staged, pushed, or deployed.
+
+## Stage 2.4 login, current user and logout API - 2026-10-08
+
+The owner authorized Stage 2.4 only. Three endpoints now adapt the accepted Stage 2.2 password and
+Stage 2.3 session primitives to HTTP: `POST /auth/login`, `GET /auth/me`, and `POST /auth/logout`.
+The accepted contract is docs/security/AUTH_API.md. This adds no authorization: there is still no
+tenant, school, membership, role, or permission concept, and no route reads any of them.
+
+Implementation, in `apps/api/src/identity/`: `auth.service.ts` orders the operations and holds the
+failure taxonomy; `auth.controller.ts` is HTTP transport only; `auth-cookie.ts` derives and parses
+the browser cookie; `trusted-origin.guard.ts` is the CSRF admission check; `auth-body-limit.ts` and
+`auth-exception.filter.ts` bound and sanitise input. `api_TRUSTED_ORIGINS` is a new required,
+startup-validated configuration value, added to the config package, turbo `globalEnv`, `.env.example`,
+CI, and the smoke script.
+
+Security posture: the opaque token appears only in a `Set-Cookie` header, never in a body, URL, or
+log; the cookie is `HttpOnly` and `SameSite=Lax` always, `__Host-` and `Secure` in production with
+no configuration able to disable that, and `Path=/` with no `Domain` in every environment; a
+duplicated session cookie is rejected rather than resolved; login and logout require an exact
+`Origin` match with no `Host` or forwarded-header fallback and fail closed when it is absent;
+credentialed CORS is not enabled; and every authentication response including errors is `no-store`
+with `Vary: Origin`.
+
+All four authentication-failure conditions return one indistinguishable body, and each still pays
+the production Argon2id cost against a committed decoy digest so a single request cannot reveal
+which condition occurred. This is explicitly not a claim of constant-time HTTP authentication.
+
+**Rate limiting is absent and is the largest gap in this stage.** Password verification is
+reachable over HTTP with no throttling, so Stage 2.4 must not be exposed directly to the public
+internet. Stage 2.6 owns full rate limiting and abuse protection.
+
+Local validation passed with no dependency, lockfile, schema, migration, or accepted-document change:
+frozen install, Prisma generation, formatting, lint, typecheck across 11 tasks, 112 unit/toolchain
+tests (config 22, Redis 4, database 8, worker 4, API 73 including 37 focused, plus one Node toolchain
+test), builds across 7 tasks, the aggregate check, 134 integration tests (API 91), 19 smoke
+assertions, mobile dependency check, Android export, and `git diff --check`. `pnpm audit
+--audit-level=high` still fails on exactly the two accepted high advisories with no new finding.
+
+Four defects were found and fixed during review rather than left for the owner: a `URL` parse gap
+that silently accepted a wildcard host into the origin allowlist; an exception filter that matched a
+body-parser error `type` Nest discards before filters run, which let a malformed-JSON parser message
+reach the client; an unreliable adapter-derived 413, replaced with an explicit pre-parse
+`Content-Length` check; and an unused import and lint suppression cleaned up.
+
+Changes are uncommitted, unstaged, and unpushed. **HARD STOP: Stage 2.5 is NOT STARTED /
+UNAUTHORIZED.**

@@ -8,7 +8,8 @@
     "WORKER_HOST",
     "WORKER_HEALTH_PORT",
     "DATABASE_URL",
-    "REDIS_URL"
+    "REDIS_URL",
+    "API_TRUSTED_ORIGINS"
   ],
   "tasks": {
     "build": {

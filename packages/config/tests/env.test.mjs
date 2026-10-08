@@ -10,24 +10,41 @@ const valid = {
   REDIS_URL: 'redis://:secret@127.0.0.1:6379',
 };
 
+// Stage 2.4 requires an explicit browser-origin allowlist. Its validation is covered by the
+// dedicated block below; the general shape assertions here only need a usable value.
+const trustedOrigins = { API_TRUSTED_ORIGINS: 'https://app.example.com,http://127.0.0.1:3000' };
+const apiValid = { ...valid, ...trustedOrigins };
+
 describe('server environment boundary', () => {
   it('requires declared infrastructure endpoints and applies safe host defaults', () => {
-    expect(parseApiEnvironment({ ...valid })).toEqual({
+    expect(parseApiEnvironment({ ...apiValid })).toEqual({
       NODE_ENV: 'development',
       API_HOST: '127.0.0.1',
       API_PORT: 4000,
       ...valid,
+      API_TRUSTED_ORIGINS: ['https://app.example.com', 'http://127.0.0.1:3000'],
     });
     expect(parseWorkerEnvironment({ ...valid }).WORKER_HEALTH_PORT).toBe(4001);
   });
 
+  it('requires a browser-origin allowlist for the API and never for the worker', () => {
+    expect(() => parseApiEnvironment({ ...valid })).toThrow(
+      'Invalid environment configuration: API_TRUSTED_ORIGINS',
+    );
+    expect(() => parseApiEnvironment({ ...valid, API_TRUSTED_ORIGINS: '' })).toThrow(
+      'API_TRUSTED_ORIGINS',
+    );
+    // The worker serves no browser surface, so it does not carry the allowlist.
+    expect(parseWorkerEnvironment({ ...valid }).API_TRUSTED_ORIGINS).toBeUndefined();
+  });
+
   it('fails when a required infrastructure endpoint is missing', () => {
-    expect(() => parseApiEnvironment({ REDIS_URL: valid.REDIS_URL })).toThrow(
+    expect(() => parseApiEnvironment({ REDIS_URL: valid.REDIS_URL, ...trustedOrigins })).toThrow(
       'Invalid environment configuration: DATABASE_URL',
     );
-    expect(() => parseApiEnvironment({ DATABASE_URL: valid.DATABASE_URL })).toThrow(
-      'Invalid environment configuration: REDIS_URL',
-    );
+    expect(() =>
+      parseApiEnvironment({ DATABASE_URL: valid.DATABASE_URL, ...trustedOrigins }),
+    ).toThrow('Invalid environment configuration: REDIS_URL');
     expect(() => parseWorkerEnvironment({ REDIS_URL: valid.REDIS_URL })).toThrow(
       'Invalid environment configuration: DATABASE_URL',
     );
@@ -45,9 +62,9 @@ describe('server environment boundary', () => {
     ['REDIS_URL', 'http://127.0.0.1:6379'],
     ['REDIS_URL', ''],
   ])('rejects a malformed %s without echoing the supplied value', (key, value) => {
-    expect(() => parseApiEnvironment({ ...valid, [key]: value })).toThrow(key);
+    expect(() => parseApiEnvironment({ ...apiValid, [key]: value })).toThrow(key);
     try {
-      parseApiEnvironment({ ...valid, [key]: value });
+      parseApiEnvironment({ ...apiValid, [key]: value });
       expect.unreachable('expected validation to fail');
     } catch (error) {
       // The message names keys only. It can never contain the password, and for a
@@ -66,15 +83,22 @@ describe('server environment boundary', () => {
         NODE_ENV: 'test',
         DATABASE_URL: valid.DATABASE_URL,
         REDIS_URL: valid.REDIS_URL,
+        API_TRUSTED_ORIGINS: trustedOrigins.API_TRUSTED_ORIGINS,
         UNRELATED_SECRET: 'private',
       }),
-    ).toEqual({ NODE_ENV: 'test', API_HOST: '127.0.0.1', API_PORT: 4100, ...valid });
+    ).toEqual({
+      NODE_ENV: 'test',
+      API_HOST: '127.0.0.1',
+      API_PORT: 4100,
+      ...valid,
+      API_TRUSTED_ORIGINS: ['https://app.example.com', 'http://127.0.0.1:3000'],
+    });
   });
 
   it.each(['', '0', '-1', '65536', '12.5', '1e3', 'not-a-port'])(
     'rejects malformed or out-of-range port %j before startup',
     (value) => {
-      expect(() => parseApiEnvironment({ ...valid, API_PORT: value })).toThrow('API_PORT');
+      expect(() => parseApiEnvironment({ ...apiValid, API_PORT: value })).toThrow('API_PORT');
       expect(() => parseWorkerEnvironment({ ...valid, WORKER_HEALTH_PORT: value })).toThrow(
         'WORKER_HEALTH_PORT',
       );
@@ -83,10 +107,10 @@ describe('server environment boundary', () => {
 
   it('rejects invalid mode and empty bind host without exposing supplied values', () => {
     expect(() =>
-      parseApiEnvironment({ ...valid, NODE_ENV: 'sensitive-input', API_HOST: '' }),
+      parseApiEnvironment({ ...apiValid, NODE_ENV: 'sensitive-input', API_HOST: '' }),
     ).toThrow('Invalid environment configuration: NODE_ENV, API_HOST');
     try {
-      parseApiEnvironment({ ...valid, API_PORT: 'private-value' });
+      parseApiEnvironment({ ...apiValid, API_PORT: 'private-value' });
     } catch (error) {
       expect(error.message).not.toContain('private-value');
     }

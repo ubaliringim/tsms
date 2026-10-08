@@ -25,6 +25,11 @@ env:
   # they are not secrets. No production credential is required by this workflow.
   DATABASE_URL: postgresql://tsms:tsms_local_development@127.0.0.1:5432/tsms
   REDIS_URL: redis://:tsms_local_redis@127.0.0.1:6379
+  # Stage 2.4 requires an explicit browser-origin allowlist in every environment.
+  # The API fails to start without it, and the values here are throwaway loopback
+  # origins that match the documented local development ports. CI exercises the
+  # Origin guard only through its own tests; the smoke checks hit /health and /ready.
+  API_TRUSTED_ORIGINS: http://127.0.0.1:3000,http://127.0.0.1:3001
   # The safety guards in packages/database and packages/redis require the
   # database name to end in _test, a loopback host, and a non-zero Redis logical
   # database. These values satisfy exactly that and nothing more.
