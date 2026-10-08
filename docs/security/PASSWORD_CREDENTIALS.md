@@ -1,5 +1,8 @@
 # Password credentials - Stage 2.2
 
+Status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08).
+Stage 2 overall remains NOT ACCEPTED; Stage 2.3 is NOT STARTED / UNAUTHORIZED.
+
 Scope: internal password primitives in apps/api/src/identity. These are not HTTP
 authentication or onboarding. The caller must authorize credential provisioning and
 replacement. No routes, Nest controller/module registration, session handling, reset
@@ -20,8 +23,10 @@ strict peer, release-age, audit, and all other install restrictions remain intac
 Bundled Node-API native binaries support Windows x64 and Linux glibc/musl targets.
 Unsupported targets require a compatible C/C++ toolchain and node-gyp prerequisites;
 never copy Windows node_modules into Linux deployments. Generated binaries remain
-ignored. Local Windows installation is verified; hosted Linux verification remains
-an owner-review follow-up because this task does not commit or push.
+ignored. Windows installation and hosted Linux installation/execution are verified.
+[Run 37725238380](https://github.com/ubaliringim/tsms/actions/runs/37725238380) passed validate for commit
+`cdf0ecd62565e9f1a0c0b701263e36c2e9092920`, including the password unit and integration tests.
+Other deployment targets and native/store builds remain unverified.
 
 The risk-register cross-cutting allowBuilds review trigger was evaluated: this single
 new entry loads the password KDF, not certificate/signature verification or glob

@@ -16,8 +16,8 @@
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
   "task": "2.2",
-  "status": "locally_validated_ready_for_owner_review",
-  "reviewStatus": "awaiting_owner_review",
+  "status": "closed_hosted_verification_complete",
+  "reviewStatus": "owner_accepted_hosted_verified",
   "nextTask": {
     "id": "2.3",
     "name": "Session Foundation",
@@ -243,7 +243,7 @@
     "dependencyAudit": "expected_fail_exactly_2_known_high_before_after_and_final",
     "diffCheck": "pass",
     "securityReview": "pass",
-    "hostedCI": "not_run_for_uncommitted_stage_2_2"
+    "hostedCI": "validate_pass_security_audit_expected_fail_at_cdf0ecd62565e9f1a0c0b701263e36c2e9092920"
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
@@ -262,11 +262,11 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Seventeen reviewed Stage 2.2 files prepared for owner-authorized commit and normal push after final validation. Hosted result pending.",
-  "nextAction": "Commit reviewed Stage 2.2 as feat: add password credential service, push main normally, inspect hosted CI, record results without a second documentation commit, then hard stop.",
+  "workingTree": "Four-file Stage 2.2 documentation closure checkpoint authorized for commit and normal push; verify clean status afterward. Implementation committed and pushed at cdf0ecd62565e9f1a0c0b701263e36c2e9092920.",
+  "nextAction": "Hard stop after documentation closure commit and normal push. Stage 2 overall NOT ACCEPTED; Stage 2.3 NOT STARTED / UNAUTHORIZED.",
   "doNot": [
     "Start Stage 2.3 or later without owner authorization",
-    "Amend, force push, deploy, or create a second documentation commit",
+    "Amend, force push, or deploy",
     "Implement login/session/HTTP authentication, recovery, tenant membership, or RBAC",
     "Modify accepted schema or migrations",
     "Suppress or weaken the dependency audit"
@@ -463,8 +463,12 @@
   "currentSubstage": {
     "id": "2.2",
     "name": "Password Credential Service",
-    "status": "locally_validated_ready_for_owner_review",
-    "accepted": false
+    "status": "closed_hosted_verification_complete",
+    "accepted": true,
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-08",
+    "closed": true,
+    "closedAt": "2026-10-08"
   },
   "authorization": {
     "stage": "2",
@@ -623,8 +627,8 @@
     ]
   },
   "stage22": {
-    "status": "locally_validated_ready_for_owner_review",
-    "accepted": false,
+    "status": "closed_hosted_verification_complete",
+    "accepted": true,
     "dependency": "argon2@0.45.1",
     "parameters": {
       "memoryKiB": 65536,
@@ -647,16 +651,55 @@
       "unit": 15,
       "integration": 8
     },
-    "hostedVerification": "not_run_uncommitted_owner_review_required",
+    "hostedVerification": {
+      "status": "complete",
+      "commit": "cdf0ecd62565e9f1a0c0b701263e36c2e9092920",
+      "runId": 37725238380,
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/37725238380",
+      "validate": "pass",
+      "securityAudit": "expected_fail_exactly_two_known_high",
+      "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
+      "unitAndToolchainTests": 62,
+      "integrationTests": 51,
+      "passwordUnitTestsIncluded": 15,
+      "passwordIntegrationTestsIncluded": 8,
+      "smokeAssertions": 16,
+      "linuxArgon2Install": "pass",
+      "prismaGenerate": "pass",
+      "mobileCheckExport": "pass",
+      "trackedFileCleanliness": "pass",
+      "nodeRuntimeWarningPresent": true,
+      "ubuntuMigrationNoticePresent": true,
+      "otherJobs": []
+    },
     "followUps": [
-      "Hosted Linux/native dependency verification after owner review",
-      "Capacity and verification-compatibility review when evolving password policy or Argon2 costs"
+      "Future deployment platform/native portability and concurrency capacity review",
+      "Verification-compatibility review when evolving password policy or Argon2 costs"
     ],
     "finalReview": {
       "documentationLinks": "two_archive_links_repaired_all_relative_links_checked",
       "security": "pass_frozen_parameters_hash_bounds_atomic_replacement_no_logging_or_scope_expansion",
       "audit": "exactly_two_known_high",
-      "hosted": "pending"
+      "hosted": "validate_pass_audit_expected_fail"
+    },
+    "commit": {
+      "sha": "cdf0ecd62565e9f1a0c0b701263e36c2e9092920",
+      "message": "feat: add password credential service",
+      "push": "main_to_origin_success_without_force"
+    },
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-08",
+    "closed": true,
+    "closedAt": "2026-10-08",
+    "documentationClosure": {
+      "files": [
+        "PROJECT_STATE.md",
+        "project-state.json",
+        "tasks/CURRENT.md",
+        "docs/security/PASSWORD_CREDENTIALS.md"
+      ],
+      "commitMessage": "docs: close Stage 2.2 hosted validation",
+      "authorizedBy": "Project owner"
     }
   },
   "stage21Validation": {
