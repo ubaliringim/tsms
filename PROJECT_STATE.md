@@ -12,7 +12,7 @@ Stage: 2 - Authentication & Identity
 
 Stage status: AUTHORIZED, not accepted. Owner approved Specification v1.0.
 
-Current substage: 2.3 - Secure Session Foundation (LOCALLY VALIDATED / READY FOR OWNER REVIEW; NOT ACCEPTED). Stages 2.1 and 2.2 remain ACCEPTED / HOSTED VERIFIED / CLOSED.
+Current substage: 2.3 - Secure Session Foundation (ACCEPTED / HOSTED VERIFIED / CLOSED, owner decision 2026-10-08). Stages 2.1 and 2.2 remain ACCEPTED / HOSTED VERIFIED / CLOSED.
 
 Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
@@ -40,9 +40,11 @@ Version-control handoff: owner authorized committing the ten reviewed Stage 2.1/
 
 Validation limitation: forced parallel checking exposed concurrent Prisma generation in the existing build/typecheck scripts (EEXIST). The uncached serial check and ordinary default check passed; task configuration is unchanged. Track coordinated generation as a separate tooling follow-up. Hosted Stage 2.1 validate passed; native device/store builds have not run.
 
-Exact next action: complete Stage 2.3 local validation and hand off uncommitted changes for owner review. No commit, push, deployment, or Stage 2.4 work.
+Stage 2.3 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Handoff record: tasks/CURRENT.md. No Stage 2.3 archive file has been created; only the four authorized documentation files changed in this closure.
 
-DO NOT: start Stage 2.4 or later, add HTTP authentication/login/cookie/JWT/recovery/tenant/RBAC behavior, change accepted schema/migrations, weaken audits, commit, push, or deploy.
+Exact next action: hard stop. Stage 2.3 documentation closure is the only authorized remaining work; Stage 2.4 requires separate owner authorization.
+
+DO NOT: start Stage 2.4 or later, add HTTP authentication/login/cookie/JWT/recovery/tenant/RBAC behavior, change accepted schema/migrations, weaken audits, amend or force-push, or deploy.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -83,5 +85,29 @@ Final documentation closure: the owner accepted Stage 2.2 and authorized committ
 The owner separately authorized Secure Session Foundation only. Earlier Stage 2.2 checkpoints above are historical; their Stage 2.3 prohibition is superseded only by this explicit authorization. Stage 2.1 and 2.2 remain CLOSED. Stage 2 overall NOT ACCEPTED. Stage 2.4 NOT STARTED / UNAUTHORIZED. Current handoff: tasks/CURRENT.md; preserved Stage 2.2 handoff: tasks/completed/stage-2-2-password-credentials.md. No commit/push/deploy is authorized for this task.
 
 Stage 2.3 local validation: 32-byte CSPRNG tokens, SHA-256 digest persistence, fixed seven-day expiry, current-user validation, ownership-enforced revocation and revoke-all are implemented as internal primitives. lastSeenAt remains unchanged. Creation/disable/revoke-all race limits are documented in docs/security/SESSIONS.md and tested. All requested local checks passed: 74 unit/toolchain tests, 68 integration tests, 16 smoke assertions, builds, mobile check/export, formatting and diff checks; audit remains expected failure on exactly the two accepted high advisories. No new dependency, schema/migration, endpoint, cookie/JWT, tenant/RBAC or safety-guard change. Stage 2.3 is ready for owner review only, not accepted; hosted verification has not run. Exact next action: owner reviews Stage 2.3 implementation and security results. HARD STOP: no Stage 2.4, commit, push, or deployment without explicit authorization.
+
+## Stage 2.3 hosted verification complete - 2026-10-08
+
+Implementation commit `c75361e85e5315b8eb17646da2825cfd9eea7b91` (`feat: add secure session foundation`) was pushed normally from main to origin. No amendment, force push, or deployment. The baseline `333ee77` remains an ancestor and was not rewritten.
+
+[Hosted run 37733953331](https://github.com/ubaliringim/tsms/actions/runs/37733953331) completed for this exact SHA.
+
+`validate` **PASS** (1m38s): frozen install, Prisma generation, Compose infrastructure, `pnpm check`, integration tests, mobile dependency check, mobile Android export, smoke, teardown, and tracked-file cleanliness all passed. Hosted Linux counts match local exactly: 73 Vitest unit tests plus one Node toolchain test (74 total; API 36), 68 integration tests (35 database, eight Redis, 25 API), 16 smoke assertions, and all three migrations replayed on hosted Ubuntu. Native argon2 installation and Linux service startup passed.
+
+`security-audit` **EXPECTED FAIL** (23s): exactly two high advisories, `node-forge` GHSA-86w9-cpqp-85rv and `braces` GHSA-vfj7-8cjw-p6xm, both `Patched versions: None`. No new advisory, no suppression, no resolution, threshold unchanged. No other jobs. The overall workflow is red solely because of this accepted audit baseline.
+
+Follow-ups persist: the Actions Node 20-to-24 runtime warning (`actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`), the ubuntu-latest to Ubuntu 26 migration notice, and the concurrent Prisma generation EEXIST item. The workflow display name is still `Stage 1 validation`; renaming it is cosmetic and left unchanged here.
+
+Stage 2.3 is now ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Acceptance does not resolve any dependency advisory: both dispositions above remain UNRESOLVED and both packages remain installed. Stage 0, Stage 1, Stage 2.1 and Stage 2.2 acceptance are untouched. Stage 2 overall remains NOT ACCEPTED. Stage 2.4 remains NOT STARTED / UNAUTHORIZED.
+
+## Stage 2.3 final documentation closure - 2026-10-08
+
+The owner accepted Stage 2.3 and authorized committing only `PROJECT_STATE.md`, `project-state.json`, `tasks/CURRENT.md`, and `docs/security/DEPENDENCY_RISK_REGISTER.md` with subject `docs: close Stage 2.3 hosted validation`, then pushing main normally. Before that commit, the pending-change set was confirmed to be exactly those four files: no implementation, test, schema, migration, dependency, lockfile, configuration, or CI file was modified, and the working tree held no untracked files. Both `HEAD` and `origin/main` equalled the accepted implementation SHA `c75361e85e5315b8eb17646da2825cfd9eea7b91`.
+
+Recorded hosted results, unchanged from the verification section above: `validate` PASS; 74 unit/toolchain tests; 68 integration tests; 16 smoke assertions; Prisma migration replay PASS with all three accepted migrations applied; mobile dependency check and Android export PASS; `security-audit` EXPECTED FAIL on exactly the two documented high-severity advisories. The overall workflow remains red and is **not** marked green. Neither advisory is marked resolved. All prior stage history, security dispositions, and known follow-ups are preserved: the two high advisories, the two scoped Prisma overrides, the concurrent Prisma generation EEXIST item, the Actions Node 20-to-24 runtime warning, the ubuntu-latest to Ubuntu 26 migration notice, native Android/iOS device and store builds not having run, non-amd64 image verification, the Compose PostgreSQL major-version tag pin, development-only local credentials, the deferred security-audit exception mechanism, InfrastructureProbe retirement through a future forward migration, and the Stage 2.2 portability, capacity, and policy-evolution reviews.
+
+Acceptance is bounded to the Stage 2.3 session primitives as implemented. The documented create/disable and revoke-all races, the in-flight validation caveat, and the disable/re-enable semantics remain open limitations, and the coordinated atomic sign-out-everywhere workflow, optional session-generation schema extension, and administrative revocation workflow remain deferred to separately authorized future work.
+
+Stage 0: ACCEPTED. Stage 1: ACCEPTED. Stage 2.1: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.2: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.3: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall: NOT ACCEPTED. Stage 2.4: NOT STARTED / UNAUTHORIZED. **HARD STOP.**
 
 Takeover review (2026-10-08) started from 333ee77, equal to origin/main with a clean tree, and revalidated every previous-agent claim rather than trusting it. All confirmed: focused suites, regression suites, smoke, mobile, and the unchanged two-high audit baseline. Three in-scope corrections were made, with no production code, schema, migration, dependency, or safety-guard change: an inaccurate claim about the UUID length check was corrected (it is redundant defence-in-depth; the anchored regex already rejects trailing line terminators, verified empirically against the compiled service); a unit test now pins the rejected identifier shapes across all four JavaScript line terminators and asserts a genuine UUID reaches the database; an integration test now covers the documented disable/re-enable behaviour, which previously had no coverage; and tasks/completed/README.md was updated to index the hosted CI repair, Stage 2.1, and the newly archived Stage 2.2 handoff, and to state that Stage 2 as a whole is not accepted. Stage 0, Stage 1, Stage 2.1 and Stage 2.2 acceptance are untouched. All work remains uncommitted; nothing staged, pushed, or deployed.

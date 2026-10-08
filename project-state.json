@@ -16,8 +16,8 @@
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
   "task": "2.3",
-  "status": "locally_validated_ready_for_owner_review",
-  "reviewStatus": "awaiting_owner_review",
+  "status": "accepted_hosted_verified_closed",
+  "reviewStatus": "complete",
   "nextTask": {
     "id": "2.4",
     "name": "Login orchestration",
@@ -240,7 +240,7 @@
     "dependencyAudit": "expected_fail_exactly_two_known_high_no_new_findings",
     "diffCheck": "pass",
     "securityReview": "pass_with_one_documentation_correction_and_two_added_tests; no production behaviour change",
-    "hostedCI": "not_run_uncommitted",
+    "hostedCI": "validate_pass_security_audit_expected_fail_at_c75361e85e5315b8eb17646da2825cfd9eea7b91_run_37733953331",
     "testCount": 74,
     "integrationTestCount": 68,
     "focusedSessionUnitTests": 12,
@@ -264,14 +264,15 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
     "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
   ],
-  "workingTree": "Stage 2.3 changes remain uncommitted for owner review.",
-  "nextAction": "Owner reviews Stage 2.3 implementation and security results. No commit, push, deployment, or Stage 2.4 work.",
+  "workingTree": "Stage 2.3 accepted and closed by the project owner. Documentation closure commit docs: close Stage 2.3 hosted validation covers exactly PROJECT_STATE.md, project-state.json, tasks/CURRENT.md and docs/security/DEPENDENCY_RISK_REGISTER.md.",
+  "nextAction": "Hard stop. Stage 2.3 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall NOT ACCEPTED; Stage 2.4 NOT STARTED / UNAUTHORIZED and requires separate owner authorization.",
   "doNot": [
     "Start Stage 2.4 or later without explicit owner authorization",
-    "Commit, push, or deploy",
     "Add HTTP authentication, login orchestration, cookies, JWTs, recovery, tenant membership, or RBAC",
     "Modify accepted schema or migrations",
-    "Suppress or weaken the dependency audit"
+    "Suppress or weaken the dependency audit",
+    "Mark the overall workflow green or either advisory resolved",
+    "Amend, force-push, or deploy"
   ],
   "stageAcceptedAt": null,
   "acceptedBy": null,
@@ -309,14 +310,18 @@
     "Stage 1 CI workflow changes",
     "Prisma dependency security remediations",
     "temporary InfrastructureProbe scaffolding",
-    "smoke-test readiness extensions"
+    "smoke-test readiness extensions",
+    "Stage 2.1 global identity persistence models and forward migration",
+    "Stage 2.2 internal password policy, Argon2id hashing and credential creation/replacement",
+    "Stage 2.3 internal session token, hashing, create, validate, revoke and revoke-all primitives"
   ],
   "acceptance": {
     "stage": "2",
     "accepted": false,
     "specification": "Authentication & Identity Specification v1.0",
     "specificationApprovedBy": "Project owner",
-    "implementationScope": "2.3 Secure Session Foundation only"
+    "acceptedSubstages": ["2.1", "2.2", "2.3"],
+    "implementationScope": "2.1, 2.2 and 2.3 accepted; 2.4 and later unauthorized"
   },
   "postAcceptanceCIRepair": {
     "date": "2026-10-07",
@@ -465,8 +470,12 @@
   "currentSubstage": {
     "id": "2.3",
     "name": "Secure Session Foundation",
-    "status": "locally_validated_ready_for_owner_review",
-    "accepted": false
+    "status": "accepted_hosted_verified_closed",
+    "accepted": true,
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-08",
+    "acceptedCommit": "c75361e85e5315b8eb17646da2825cfd9eea7b91",
+    "hostedRunId": 37733953331
   },
   "authorization": {
     "stage": "2",
@@ -749,9 +758,9 @@
     "hostedCI": "validate_pass_security_audit_expected_fail_at_cdf0ecd62565e9f1a0c0b701263e36c2e9092920"
   },
   "stage23": {
-    "status": "locally_validated_ready_for_owner_review",
-    "accepted": false,
-    "hostedVerified": false,
+    "status": "closed_hosted_verification_complete",
+    "accepted": true,
+    "hostedVerified": true,
     "scope": "Internal session primitives only: token generation and hashing, create, validate, revoke, revoke-all. No HTTP wiring.",
     "concurrencyLimitations": [
       "A session insert racing an account disable can succeed; validation independently rechecks current status.",
@@ -764,7 +773,94 @@
       "Optional session-generation/version column, which would require schema approval and a new migration.",
       "Administrative revocation workflow for permanent invalidation.",
       "Login orchestration, cookies, CSRF, refresh tokens, Stage 2.4 and later."
-    ]
+    ],
+    "hosted": {
+      "runId": 37733953331,
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/37733953331",
+      "headSha": "c75361e85e5315b8eb17646da2825cfd9eea7b91",
+      "completedAt": "2026-10-08",
+      "validate": {
+        "conclusion": "success",
+        "duration": "1m38s",
+        "stepsAllPassed": true,
+        "unitToolchainTests": 74,
+        "vitestUnitTests": 73,
+        "nodeToolchainTests": 1,
+        "apiUnitTests": 36,
+        "integrationTests": 68,
+        "integrationBreakdown": {
+          "database": 35,
+          "redis": 8,
+          "api": 25
+        },
+        "smokeAssertions": 16,
+        "migrationsReplayed": 3,
+        "mobileCheck": "pass",
+        "mobileExport": "pass",
+        "hostedCountsMatchLocal": true
+      },
+      "securityAudit": {
+        "conclusion": "failure",
+        "expected": true,
+        "duration": "23s",
+        "findings": 2,
+        "severity": "high",
+        "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
+        "packages": ["node-forge<=1.4.0", "braces<=3.0.3"],
+        "patchedVersions": "None for both",
+        "newAdvisories": 0,
+        "suppressionApplied": false,
+        "thresholdChanged": false
+      },
+      "annotations": [
+        "Node.js 20 deprecated; actions/checkout@v4, actions/setup-node@v4 and pnpm/action-setup@v4 are forced onto Node.js 24. Pre-existing follow-up.",
+        "ubuntu-latest migrates to Ubuntu 26 between October 19 and November 19, 2026. Pre-existing follow-up."
+      ],
+      "otherJobs": "none",
+      "overallConclusion": "failure solely because of the accepted, unsuppressed security-audit baseline"
+    },
+    "acceptedBy": "Project owner",
+    "acceptedAt": "2026-10-08",
+    "acceptanceScope": "owner_accepted_hosted_verified",
+    "closed": true,
+    "closedAt": "2026-10-08",
+    "commit": {
+      "sha": "c75361e85e5315b8eb17646da2825cfd9eea7b91",
+      "message": "feat: add secure session foundation",
+      "push": "main_to_origin_success_without_force"
+    },
+    "documentationClosure": {
+      "date": "2026-10-08",
+      "files": [
+        "PROJECT_STATE.md",
+        "project-state.json",
+        "tasks/CURRENT.md",
+        "docs/security/DEPENDENCY_RISK_REGISTER.md"
+      ],
+      "commitMessage": "docs: close Stage 2.3 hosted validation",
+      "authorizedBy": "Project owner",
+      "implementationFilesChanged": false,
+      "testsChanged": false,
+      "schemaMigrationsDependenciesCiChanged": false,
+      "workflowMarkedGreen": false,
+      "advisoriesMarkedResolved": false
+    },
+    "acceptanceBoundaries": {
+      "dependencyAdvisoriesResolved": false,
+      "workflowMarkedGreen": false,
+      "openLimitations": [
+        "A session insert racing an account disable can succeed; validation independently rechecks current status.",
+        "Creation committing outside the revoke-all update snapshot can survive that revoke-all.",
+        "In-flight validation can race with later revocation or disabling; the returned context is not a perpetual authorization grant.",
+        "Disabling is not implicit revocation; re-enabling a user can make an otherwise valid, unrevoked, unexpired session usable again."
+      ],
+      "deferredToAuthorizedFutureStage": [
+        "Coordinated atomic sign-out-everywhere via a per-user transaction lock.",
+        "Optional session-generation/version column, which would require schema approval and a new migration.",
+        "Administrative revocation workflow for permanent invalidation.",
+        "Login orchestration, cookies, CSRF, refresh tokens, Stage 2.4 and later."
+      ]
+    }
   },
   "stage22ChangedFiles": [
     "PROJECT_STATE.md",
@@ -811,5 +907,14 @@
     "dependenciesChanged": false,
     "schemaChanged": false,
     "safetyGuardsChanged": false
+  },
+  "stageStatuses": {
+    "0": "accepted",
+    "1": "accepted",
+    "2": "not_accepted",
+    "2.1": "accepted_hosted_verified_closed",
+    "2.2": "accepted_hosted_verified_closed",
+    "2.3": "accepted_hosted_verified_closed",
+    "2.4": "not_started_unauthorized"
   }
 }

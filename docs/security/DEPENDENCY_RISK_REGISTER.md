@@ -704,6 +704,30 @@ analysis plus a new owner decision. The disposition reverts to BLOCKING in the i
 
 ---
 
+## Hosted re-confirmation of the two accepted dispositions - 2026-10-08
+
+Stage 2.3 implementation commit `c75361e85e5315b8eb17646da2825cfd9eea7b91`, hosted run
+[37733953331](https://github.com/ubaliringim/tsms/actions/runs/37733953331). The `security-audit` job failed,
+as it always does, on exactly the two dispositions recorded above and nothing else:
+
+| Advisory            | Package      | Severity | Vulnerable versions | Patched versions |
+| ------------------- | ------------ | -------- | ------------------- | ---------------- |
+| GHSA-86w9-cpqp-85rv | `node-forge` | high     | `<= 1.4.0`          | **None**         |
+| GHSA-vfj7-8cjw-p6xm | `braces`     | high     | `<= 3.0.3`          | **None**         |
+
+`2 vulnerabilities found / Severity: 2 high`. No new advisory, no suppression, no `ignoreCves`, no threshold
+change, no reclassification, and no mark of resolution. The `validate` job passed in the same run, so the
+workflow is red solely because of this accepted baseline, not because of a functional regression.
+
+The reachability analyses in this register are unchanged by Stage 2.3: nothing added touches Expo, Metro,
+Next.js linting, or any glob or RSA verification path. The review triggers below therefore have **not** fired.
+
+Stage 2.3 was accepted and closed by the project owner on 2026-10-08. **Acceptance does not resolve either
+disposition.** Both packages remain installed, both vulnerable code paths remain present on disk, neither
+has an upstream patched release, and `pnpm audit --audit-level=high` still fails with `2 vulnerabilities
+found / Severity: 2 high`. The overall workflow is still red. The raw audit result is not hidden, and no
+new exception, suppression, ignore rule, threshold change, or expiry has been introduced.
+
 ## Cross-cutting review triggers
 
 In addition to the per-advisory triggers above:
