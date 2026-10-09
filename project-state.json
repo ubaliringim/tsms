@@ -240,14 +240,15 @@
     "dependencyAudit": "expected_fail_exactly_two_known_high_no_new_findings",
     "diffCheck": "pass",
     "securityReview": "pass_with_one_documentation_correction_and_two_added_tests; no production behaviour change",
-    "hostedCI": "validate_pass_security_audit_expected_fail_at_e2bb3b79aa774b64e155b273b35af6dd17a47242_run_37859811782",
+    "hostedCI": "validate_pass_security_audit_expected_fail_at_29153a0d57271f30d9e9212818b368926adb431b_run_37863994222",
     "testCount": 74,
     "integrationTestCount": 68,
     "focusedSessionUnitTests": 12,
     "focusedSessionIntegrationTests": 17,
     "uuidLengthCheckFinding": "The exact 36-character length check in requireId is redundant defence-in-depth, not the mechanism that rejects trailing line terminators. The anchored pattern already rejects \\n, \\r, U+2028 and U+2029 because it ends with the specific class [0-9a-f]{12}. Both checks retained; an earlier claim that the length check rejects a trailing newline was corrected.",
     "stage24Hosted": "validate_pass_112_unit_134_integration_19_smoke_security_audit_expected_fail_run_37747657210",
-    "stage25Hosted": "validate_pass_139_unit_214_integration_19_smoke_security_audit_expected_fail_run_37859811782"
+    "stage25Hosted": "validate_pass_139_unit_214_integration_19_smoke_security_audit_expected_fail_run_37859811782",
+    "ciReliabilityHosted": "validate_pass_148_unit_214_integration_19_smoke_zero_TS6053_run_37863994222"
   },
   "knownIssues": [
     "Raw audit still fails on the two unresolved Stage 0 advisories (node-forge, braces); the CI workflow reports red because of it.",
@@ -263,11 +264,10 @@
     "Mobile dependency check and Android export pass for Stage 2.1; native device/store builds remain unverified.",
     "ESLint 9.39.5 is upstream-deprecated and retained for peer compatibility with the React lint chain.",
     "checkout@v4, setup-node@v4, and pnpm/action-setup@v4 declare node20; GitHub runs actions on Node 24. Action upgrades deferred to a separately validated follow-up.",
-    "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
-    "Prisma generation race: corrected locally (single db:generate task owns generation; build and typecheck depend on it and only read its output; db:generate is uncached). 9 structural regression tests and five clean-state parallel runs pass, but hosted verification is still pending, so this follow-up remains open until a hosted validate run succeeds."
+    "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up."
   ],
-  "workingTree": "Stage 2.5 accepted and closed by the project owner. Documentation closure commit docs: close Stage 2.5 hosted validation covers exactly PROJECT_STATE.md, project-state.json and tasks/CURRENT.md.",
-  "nextAction": "Hard stop. Stage 2.5 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall NOT ACCEPTED; Stage 2.6 NOT STARTED / UNAUTHORIZED and requires separate owner authorization.",
+  "workingTree": "CI reliability fix committed as 29153a0d57271f30d9e9212818b368926adb431b and pushed normally. Hosted validate passed. This documentation checkpoint is deliberately left uncommitted for owner review.",
+  "nextAction": "Owner performs final acceptance and the documentation closure commit for the Prisma generation race fix. Stage 2.5 remains ACCEPTED / HOSTED VERIFIED / CLOSED; Stage 2 overall NOT ACCEPTED; Stage 2.6 NOT STARTED / UNAUTHORIZED.",
   "doNot": [
     "Start Stage 2.6 or later without explicit owner authorization",
     "Expose the API to the public internet before Stage 2.6 rate limiting exists",
@@ -462,7 +462,7 @@
     "freshCheckoutForcedNoCacheBuild": "pass",
     "freshInfrastructureState": "pass_reset_then_up_then_integration",
     "ciWorkflow": "explicit_test_urls_passed_through_turbo_task_env_hosted_verification_complete",
-    "forcedParallelCheck": "fix_implemented_locally_validated_hosted_verification_pending",
+    "forcedParallelCheck": "pass_no_concurrent_prisma_generation_after_graph_ownership_fix",
     "forcedSequentialCheck": "pass_TURBO_FORCE_true_TURBO_CONCURRENCY_1"
   },
   "stage1Acceptance": {
@@ -516,7 +516,7 @@
     "smokeScriptReviewed": "Stage 0 liveness assertions retained unchanged; added readiness and fail-fast assertions do not weaken them; 10s to 30s deadline cannot hide a persistent failure because the assertion is still exitCode === 1",
     "mobileRegression": "none; exported bundle content hash identical to Stage 0",
     "freshStateScope": "only TSMS-owned volumes and containers were manipulated; 18 unrelated host volumes untouched; no system prune",
-    "concurrentPrismaGenerationFollowUp": "fix_implemented_locally_validated_hosted_verification_pending"
+    "concurrentPrismaGenerationFollowUp": "resolved"
   },
   "changedFiles": [
     "PROJECT_STATE.md",
@@ -1513,7 +1513,7 @@
   },
   "ciReliability": {
     "date": "2026-10-08",
-    "status": "fix_implemented_locally_validated_hosted_verification_pending",
+    "status": "resolved_and_closed",
     "incidentRun": 37860601281,
     "incidentUrl": "https://github.com/ubaliringim/tsms/actions/runs/37860601281",
     "incidentError": "TS6053: File 'packages/database/src/generated/prisma/client.ts' not found, with TS2307 for './generated/prisma/client.js'.",
@@ -1557,8 +1557,105 @@
       "Turbo caching for build and typecheck is retained. Their inputs are git-tracked files only, and schema.prisma, prisma.config.ts and the Prisma version in package.json are all tracked, so a change to any of them changes the hash.",
       "A direct package-level build or typecheck invocation now requires pnpm db:generate first. The supported root-level commands are unaffected."
     ],
-    "stage1FollowUpStatus": "fix_implemented_locally_validated_hosted_verification_pending",
-    "stage1FollowUpResolved": false,
-    "resolutionNote": "The correction is implemented and locally validated, but hosted CI has not yet run against it. The Stage 1 follow-up stays open until a hosted validate run passes on the maintenance commit."
-  }
+    "stage1FollowUpStatus": "resolved",
+    "stage1FollowUpResolved": true,
+    "resolutionNote": "Resolved. The single-writer generation graph is implemented, locally validated across five clean-state parallel runs, and confirmed by hosted run 37863994222 with zero TS6053 occurrences and zero Prisma invocations from the build and typecheck tasks.",
+    "commit": {
+      "sha": "29153a0d57271f30d9e9212818b368926adb431b",
+      "message": "fix: serialize Prisma client generation in build graph",
+      "push": "main_to_origin_success_without_force",
+      "filesCommitted": 6
+    },
+    "hosted": {
+      "runId": 37863994222,
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/37863994222",
+      "headSha": "29153a0d57271f30d9e9212818b368926adb431b",
+      "validate": {
+        "conclusion": "success",
+        "stepsAllPassed": true,
+        "unitToolchainTests": 148,
+        "vitestUnitTests": 147,
+        "nodeToolchainTests": 1,
+        "integrationTests": 214,
+        "integrationBreakdown": {
+          "database": 35,
+          "redis": 8,
+          "api": 171
+        },
+        "smokeAssertions": 19,
+        "migrationsApplied": 3,
+        "pendingMigrations": 0,
+        "androidExport": "pass_android_578_modules",
+        "trackedFileCleanliness": "pass",
+        "ts6053Occurrences": 0,
+        "unexpectedFailures": 0,
+        "hostedCountsMatchLocal": true
+      },
+      "prismaGenerationTask": {
+        "buildTaskInvokingPrisma": 0,
+        "typecheckTaskInvokingPrisma": 0,
+        "note": "On hosted Linux the @tsms/database build and typecheck tasks invoke no Prisma command at all, confirming the single-writer graph. prisma generate runs only from the db:generate task and from the explicit pnpm db:generate CI step."
+      },
+      "securityAudit": {
+        "conclusion": "failure",
+        "expected": true,
+        "findings": 2,
+        "severity": "high",
+        "advisories": ["GHSA-86w9-cpqp-85rv", "GHSA-vfj7-8cjw-p6xm"],
+        "newAdvisories": 0,
+        "suppressionApplied": false
+      },
+      "overallConclusion": "failure solely because of the accepted, unsuppressed security-audit baseline. Not green."
+    },
+    "closedAt": "2026-10-09"
+  },
+  "resolvedFollowUps": [
+    {
+      "id": "concurrent-prisma-generation",
+      "title": "Concurrent Prisma Client generation (EEXIST) in the database build graph",
+      "openedAt": "Stage 1",
+      "originalFailure": "A forced parallel pnpm check produced EEXIST errors on generated/prisma/internal because two tasks regenerated the same output concurrently.",
+      "subsequentHostedFailure": "Hosted run 37860601281 later failed pnpm check with TS6053: File 'packages/database/src/generated/prisma/client.ts' not found. A flake, not deterministic: hosted run 37859811782 passed on the identical commit.",
+      "confirmedRootCause": "packages/database declared both build and typecheck as 'prisma generate && tsc ...', and turbo.json gave both only dependsOn [\"^build\"]. The ^ prefix orders a package's dependencies, not its own tasks, so @tsms/database#build and @tsms/database:typecheck were scheduled in parallel. Both wrote src/generated/prisma and one task's tsc read the directory while the other rewrote it.",
+      "acceptedCorrection": "One uncached db:generate Turbo task owns generation; build and typecheck depend on it and only read its output.",
+      "implementationCommit": "29153a0d57271f30d9e9212818b368926adb431b",
+      "hostedValidation": {
+        "runId": 37863994222,
+        "validate": "pass",
+        "ts6053Occurrences": 0,
+        "buildTaskInvokingPrisma": 0,
+        "typecheckTaskInvokingPrisma": 0,
+        "unitToolchainTests": 148,
+        "integrationTests": 214,
+        "smokeAssertions": 19,
+        "migrationsApplied": 3,
+        "pendingMigrations": 0,
+        "androidExportModules": 578,
+        "securityAudit": "expected_fail_two_known_high_advisories",
+        "overallWorkflow": "red"
+      },
+      "regressionCoverage": {
+        "file": "packages/database/tests/generation.test.mjs",
+        "structuralTests": 9,
+        "negativeControl": "Reintroducing \"prisma generate &&\" into the database build and typecheck scripts fails two of the assertions."
+      },
+      "localValidation": {
+        "cleanStateParallelRuns": 5,
+        "failures": 0,
+        "cacheHitBehaviourVerified": true,
+        "coldCacheBehaviourVerified": true,
+        "entryPointsVerifiedFromCleanGeneratedState": [
+          "pnpm build",
+          "pnpm typecheck",
+          "pnpm test",
+          "pnpm check",
+          "pnpm test:integration",
+          "pnpm db:generate"
+        ]
+      },
+      "resolvedAt": "2026-10-09",
+      "remainingLimitation": "Direct package-level invocations such as pnpm --filter @tsms/database typecheck no longer generate the client first and require pnpm db:generate beforehand. The supported root-level commands are unaffected. This does not resolve Prisma or CI risk generally.",
+      "historyPreserved": true
+    }
+  ]
 }

@@ -464,3 +464,69 @@ docs/architecture/DEPENDENCY_REVIEW.md.
 The Stage 1 follow-up recording this race is **FIX IMPLEMENTED / LOCALLY VALIDATED / HOSTED
 VERIFICATION PENDING**, not yet resolved: the correction must be confirmed by a hosted validate run before the follow-up can close. No
 dependency, lockfile, schema, migration, authentication, tenant, or mobile change was made.
+
+## CI reliability: hosted confirmation - 2026-10-09
+
+The maintenance fix was committed as `29153a0d57271f30d9e9212818b368926adb431b` (`fix: serialize Prisma
+client generation in build graph`) and pushed normally. No amendment, force push, or deployment. The
+baseline `70c572d` remains an ancestor.
+
+[Hosted run 37863994222](https://github.com/ubaliringim/tsms/actions/runs/37863994222) completed for
+that exact SHA. `validate` **PASS** with every step green: 148 unit/toolchain tests, 214 integration
+tests, 19 smoke assertions, three Prisma migrations applied with none pending, an Android export of 578
+modules, and tracked-file cleanliness. Hosted counts match local exactly.
+
+The decisive evidence is the Prisma task behaviour on a clean Linux runner: `@tsms/database#build` and
+`@tsms/database:typecheck` each invoke **zero** Prisma commands, and `TS6053` occurs **zero** times.
+`prisma generate` runs only from the `db:generate` task and from the explicit `pnpm db:generate` CI
+step. The accepted single-writer graph therefore behaves as designed on hosted CI.
+
+`security-audit` **EXPECTED FAIL** on exactly node-forge GHSA-86w9-cpqp-85rv and braces
+GHSA-vfj7-8cjw-p6xm, both high, no new advisory, no suppression. The overall workflow remains red for
+that accepted reason only and is **not** green.
+
+The historical failure is preserved rather than erased: hosted run 37860601281 remains the incident
+record and its cause is restated in docs/architecture/DEPENDENCY_REVIEW.md. The Stage 1 follow-up is
+recorded as fixed, locally validated, and hosted verified, and stays open pending the owner closure
+decision.
+
+Stage 2.5 remains ACCEPTED / HOSTED VERIFIED / CLOSED and its closure history is unchanged. Stage 2
+overall remains NOT ACCEPTED. Stage 2.6 remains NOT STARTED / UNAUTHORIZED.
+
+## CI reliability follow-up: documentation closure - 2026-10-09
+
+The owner accepted the Prisma generation race correction and authorized this documentation-only closure.
+
+The specific Stage 1 concurrent Prisma generation issue is **RESOLVED** and removed from the active
+unresolved list. Its history is preserved rather than erased:
+
+- **Original failure:** EEXIST on `generated/prisma/internal` from two tasks regenerating the same output.
+- **Subsequent hosted failure:** run 37860601281, `TS6053: File 'packages/database/src/generated/prisma/client.ts' not found`. A flake; run 37859811782 passed on the identical commit.
+- **Confirmed root cause:** database `build` and `typecheck` independently invoked `prisma generate`, and `dependsOn: ["^build"]` ordered only dependencies, so they ran in parallel.
+- **Accepted correction:** one uncached `db:generate` task, ordered before both consumers, which only read its output.
+- **Implementation commit:** `29153a0d57271f30d9e9212818b368926adb431b`.
+- **Successful hosted validation:** run 37863994222, `validate` PASS, zero `TS6053`, zero Prisma invocations from either consumer.
+- **Regression coverage:** 9 structural tests in `packages/database/tests/generation.test.mjs`; reintroducing the defect fails two of them.
+- **Local validation:** 5 consecutive clean-state parallel passes, 0 failures; cache-hit and cold-cache behaviour both verified; all supported entry points verified from a deleted generated-output directory.
+
+Hosted results as recorded: `validate` PASS; 148 unit/toolchain tests; 214 integration tests; 19
+smoke assertions; 3 Prisma migrations applied with 0 pending; Android export of 578 modules;
+`security-audit` EXPECTED FAIL on exactly the two known high-severity advisories. **The overall workflow
+is RED and is not marked green.**
+
+**Remaining limitation.** Direct package-level commands such as `pnpm --filter @tsms/database typecheck`
+no longer generate the client first and require `pnpm db:generate` beforehand. Supported root-level
+commands are unaffected.
+
+**Not resolved by this closure.** This resolves only the generation-ownership race. All 14 unrelated
+known issues are preserved and none was marked resolved, including: both high-severity advisories still
+unresolved and still installed; the two scoped Prisma overrides awaiting upstream pins; the Actions
+Node 20-to-24 runtime warning; the ubuntu-latest to Ubuntu 26 migration notice; ESLint 9.39.5
+deprecation; native device and store builds not run; non-amd64 image verification; the Compose
+PostgreSQL major-version tag pin; development-only local credentials; the deferred audit-exception
+mechanism; and InfrastructureProbe retirement through a future forward migration.
+
+Stage 0 ACCEPTED. Stage 1 ACCEPTED. Stages 2.1 through 2.5 ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2
+overall NOT ACCEPTED. Stage 2.6 NOT STARTED / UNAUTHORIZED. No authentication, recovery, schema,
+migration, dependency, or CI behaviour was changed by this maintenance closure.
+**HARD STOP: no deployment and no Stage 2.6.**

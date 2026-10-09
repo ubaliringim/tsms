@@ -147,3 +147,62 @@ original defect fails two of them.
 A variable that changes behaviour yet cannot change a cache key can let a stale task result be reused
 across configurations. Both were added, and the regression test asserts that every documented API
 configuration variable is present.
+
+### Hosted confirmation
+
+Maintenance commit `29153a0d57271f30d9e9212818b368926adb431b` (`fix: serialize Prisma client generation in
+build graph`) was pushed normally. Hosted run
+[37863994222](https://github.com/ubaliringim/tsms/actions/runs/37863994222) completed for that exact SHA.
+
+`validate` **PASS**, every step green: 148 unit/toolchain tests (147 Vitest plus one Node toolchain
+test), 214 integration tests, 19 smoke assertions, three migrations applied with none pending, an
+Android export of 578 modules, and tracked-file cleanliness. Hosted counts match local exactly.
+
+The decisive evidence is in the Prisma task behaviour: `@tsms/database#build` and
+`@tsms/database#typecheck` each invoke **zero** Prisma commands on hosted Linux, and `TS6053` occurs
+**zero** times. `prisma generate` runs only from the `db:generate` task and from the explicit
+`pnpm db:generate` CI step. This is the accepted single-writer graph behaving as designed on a clean
+Linux runner.
+
+`security-audit` **EXPECTED FAIL** on exactly node-forge GHSA-86w9-cpqp-85rv and braces
+GHSA-vfj7-8cjw-p6xm, both high, no new advisory, no suppression. The overall workflow is red for that
+accepted reason only and is **not** green.
+
+### Historical failure preserved
+
+The original failure is not erased. Hosted run 37860601281 remains the record of the incident, and its
+cause is restated above: two independent database tasks regenerating the same directory. The Stage 1
+follow-up is not marked resolved in project state; it is recorded as fixed, locally validated, and
+hosted verified, and stays open pending the owner closure decision.
+
+### Follow-up closure
+
+The Stage 1 concurrent Prisma generation issue is **RESOLVED** and closed by the owner. Its history is
+retained deliberately, because the record matters more than the tidy state:
+
+| Stage                  | Event                                                                                                                                                                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Stage 1                | Forced parallel `pnpm check` produced `EEXIST` on `generated/prisma/internal`: two tasks regenerating the same output.                                                                                                                                                                           |
+| Hosted run 37860601281 | `pnpm check` failed with `TS6053: File 'packages/database/src/generated/prisma/client.ts' not found`. A flake � hosted run 37859811782 passed on the identical commit.                                                                                                                           |
+| Confirmed root cause   | `packages/database` declared **both** `build` and `typecheck` as `prisma generate && tsc �`, while `turbo.json` gave both only `dependsOn: ["^build"]`. `^` orders a package's dependencies, not its own tasks, so the two database tasks ran in parallel and both wrote `src/generated/prisma`. |
+| Accepted correction    | One uncached `db:generate` task owns generation; `build` and `typecheck` depend on it and only read its output.                                                                                                                                                                                  |
+| Implementation commit  | `29153a0d57271f30d9e9212818b368926adb431b`                                                                                                                                                                                                                                                       |
+| Hosted validation      | Run [37863994222](https://github.com/ubaliringim/tsms/actions/runs/37863994222): `validate` PASS, zero `TS6053`, zero Prisma invocations from the build and typecheck tasks.                                                                                                                     |
+| Regression coverage    | `packages/database/tests/generation.test.mjs`, 9 structural tests; reintroducing the defect fails two of them.                                                                                                                                                                                   |
+| Local validation       | 5 consecutive clean-state parallel runs with 0 failures; cache-hit and cold-cache behaviour both verified; `pnpm build`, `pnpm typecheck`, `pnpm test`, `pnpm check`, `pnpm test:integration` each verified from a deleted generated-output directory.                                           |
+
+### Remaining limitation, and what this does not resolve
+
+Direct package-level invocations such as `pnpm --filter @tsms/database typecheck` no longer generate
+the client first and require `pnpm db:generate` beforehand. The supported root-level commands are
+unaffected.
+
+Closing this follow-up resolves **only** this generation-ownership race. It does not resolve Prisma or
+CI risk generally. Still open and unaffected by this closure:
+
+- Both accepted high-severity advisories, `node-forge` GHSA-86w9-cpqp-85rv and `braces`
+  GHSA-vfj7-8cjw-p6xm, remain **unresolved**. Neither has a patched upstream release, both are still
+  installed, and `pnpm audit --audit-level=high` still fails, so the workflow still reports red.
+- The two scoped Prisma overrides awaiting upstream pins.
+- Actions Node 20-to-24, the ubuntu-latest to Ubuntu 26 migration notice, ESLint 9.39.5
+  deprecation, native device and store builds not run, and non-amd64 image verification.
