@@ -264,7 +264,7 @@
     "ESLint 9.39.5 is upstream-deprecated and retained for peer compatibility with the React lint chain.",
     "checkout@v4, setup-node@v4, and pnpm/action-setup@v4 declare node20; GitHub runs actions on Node 24. Action upgrades deferred to a separately validated follow-up.",
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up.",
-    "Forced parallel pnpm check exposed concurrent prisma generate in the existing database build/typecheck scripts (EEXIST on generated/prisma/internal). An uncached serial check and the ordinary default check passed. Task configuration is unchanged; coordinate generation in a separately authorized tooling follow-up."
+    "Prisma generation race: corrected locally (single db:generate task owns generation; build and typecheck depend on it and only read its output; db:generate is uncached). 9 structural regression tests and five clean-state parallel runs pass, but hosted verification is still pending, so this follow-up remains open until a hosted validate run succeeds."
   ],
   "workingTree": "Stage 2.5 accepted and closed by the project owner. Documentation closure commit docs: close Stage 2.5 hosted validation covers exactly PROJECT_STATE.md, project-state.json and tasks/CURRENT.md.",
   "nextAction": "Hard stop. Stage 2.5 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall NOT ACCEPTED; Stage 2.6 NOT STARTED / UNAUTHORIZED and requires separate owner authorization.",
@@ -461,7 +461,9 @@
     "prismaFormatCheck": "pass",
     "freshCheckoutForcedNoCacheBuild": "pass",
     "freshInfrastructureState": "pass_reset_then_up_then_integration",
-    "ciWorkflow": "explicit_test_urls_passed_through_turbo_task_env_hosted_verification_complete"
+    "ciWorkflow": "explicit_test_urls_passed_through_turbo_task_env_hosted_verification_complete",
+    "forcedParallelCheck": "fix_implemented_locally_validated_hosted_verification_pending",
+    "forcedSequentialCheck": "pass_TURBO_FORCE_true_TURBO_CONCURRENCY_1"
   },
   "stage1Acceptance": {
     "stage": "1",
@@ -513,7 +515,8 @@
     "infrastructureProbeReviewed": "kept; no tenant or business semantics; no references from apps/api, apps/worker, packages/config, or scripts",
     "smokeScriptReviewed": "Stage 0 liveness assertions retained unchanged; added readiness and fail-fast assertions do not weaken them; 10s to 30s deadline cannot hide a persistent failure because the assertion is still exitCode === 1",
     "mobileRegression": "none; exported bundle content hash identical to Stage 0",
-    "freshStateScope": "only TSMS-owned volumes and containers were manipulated; 18 unrelated host volumes untouched; no system prune"
+    "freshStateScope": "only TSMS-owned volumes and containers were manipulated; 18 unrelated host volumes untouched; no system prune",
+    "concurrentPrismaGenerationFollowUp": "fix_implemented_locally_validated_hosted_verification_pending"
   },
   "changedFiles": [
     "PROJECT_STATE.md",
@@ -1507,5 +1510,55 @@
       "bracesGHSAVfj7CjwP6xm": "unresolved; installed; no patched upstream release",
       "noResolutionsInvented": true
     }
+  },
+  "ciReliability": {
+    "date": "2026-10-08",
+    "status": "fix_implemented_locally_validated_hosted_verification_pending",
+    "incidentRun": 37860601281,
+    "incidentUrl": "https://github.com/ubaliringim/tsms/actions/runs/37860601281",
+    "incidentError": "TS6053: File 'packages/database/src/generated/prisma/client.ts' not found, with TS2307 for './generated/prisma/client.js'.",
+    "flakeEvidence": "Hosted run 37859811782 on the identical commit passed, so this was an intermittent race rather than a deterministic failure.",
+    "rootCause": "packages/database declared build and typecheck as \"prisma generate && tsc ...\", and turbo.json gave both only dependsOn [\"^build\"]. The ^ prefix orders a package dependencies, not its own tasks, so @tsms/database#build and @tsms/database:typecheck were scheduled in parallel. Both wrote packages/database/src/generated/prisma and one task tsc read the directory while the other rewrote it.",
+    "taskGraphBefore": "@tsms/database#typecheck (prisma generate + tsc --noEmit) and @tsms/database#build (prisma generate + tsc) running in parallel, both writing src/generated/prisma",
+    "taskGraphAfter": "@tsms/database#db:generate (prisma generate, cache false) is the sole writer; build and typecheck depend on it and only read its output",
+    "fix": [
+      "packages/database build and typecheck scripts no longer invoke prisma; they only run tsc.",
+      "turbo.json adds a db:generate task with cache: false.",
+      "turbo.json build.dependsOn and typecheck.dependsOn now include db:generate alongside ^build.",
+      "turbo.json globalEnv now includes API_PASSWORD_RECOVERY_DELIVERY_MODE and API_PASSWORD_RECOVERY_URL_BASE, which were documented but missing from the cache key."
+    ],
+    "cachingRationale": "db:generate is uncached deliberately. Generation costs roughly 150-400 ms, and an uncached task removes any chance of an incomplete or stale restored directory being treated as a successful generation, which is the property the incident was about.",
+    "noMigrationsIntroduced": true,
+    "generationRequiresNoDatabase": true,
+    "developerEntryPointsVerifiedFromCleanGeneratedState": [
+      "pnpm build",
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm check",
+      "pnpm test:integration",
+      "pnpm db:generate"
+    ],
+    "developerErgonomicsChange": "Direct package invocations such as pnpm --filter @tsms/database typecheck no longer generate the client first; pnpm db:generate must be run first. Documented in the package script notes and docs/architecture/DEPENDENCY_REVIEW.md.",
+    "regressionCoverage": {
+      "file": "packages/database/tests/generation.test.mjs",
+      "tests": 9,
+      "style": "structural assertions against turbo.json, package scripts, .gitignore and the Prisma schema",
+      "timingBased": false,
+      "negativeControl": "Reintroducing \"prisma generate &&\" into the database build script fails two of the assertions."
+    },
+    "repeatedParallelValidation": {
+      "runs": 5,
+      "eachFromCleanGeneratedState": true,
+      "failures": 0,
+      "concurrentGenerationObserved": false
+    },
+    "documentation": "docs/architecture/DEPENDENCY_REVIEW.md",
+    "remainingLimitations": [
+      "Turbo caching for build and typecheck is retained. Their inputs are git-tracked files only, and schema.prisma, prisma.config.ts and the Prisma version in package.json are all tracked, so a change to any of them changes the hash.",
+      "A direct package-level build or typecheck invocation now requires pnpm db:generate first. The supported root-level commands are unaffected."
+    ],
+    "stage1FollowUpStatus": "fix_implemented_locally_validated_hosted_verification_pending",
+    "stage1FollowUpResolved": false,
+    "resolutionNote": "The correction is implemented and locally validated, but hosted CI has not yet run against it. The Stage 1 follow-up stays open until a hosted validate run passes on the maintenance commit."
   }
 }

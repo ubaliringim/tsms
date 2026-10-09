@@ -18,8 +18,10 @@
     "./tsconfig/*": "./tsconfig/*"
   },
   "scripts": {
-    "build": "prisma generate && tsc -p tsconfig.json",
-    "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
+    "//build": "Reads src/generated/prisma but never writes it. Generation is owned solely by the db:generate task so this package's build and typecheck cannot regenerate concurrently. Run pnpm db:generate first when invoking these scripts directly outside Turbo.",
+    "build": "tsc -p tsconfig.json",
+    "//typecheck": "Reads src/generated/prisma but never writes it. See the build note above.",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:generate": "prisma generate",

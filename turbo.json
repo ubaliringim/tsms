@@ -9,15 +9,20 @@
     "WORKER_HEALTH_PORT",
     "DATABASE_URL",
     "REDIS_URL",
-    "API_TRUSTED_ORIGINS"
+    "API_TRUSTED_ORIGINS",
+    "API_PASSWORD_RECOVERY_DELIVERY_MODE",
+    "API_PASSWORD_RECOVERY_URL_BASE"
   ],
   "tasks": {
+    "db:generate": {
+      "cache": false
+    },
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "db:generate"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "db:generate"],
       "outputs": []
     },
     "test": {

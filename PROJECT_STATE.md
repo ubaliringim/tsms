@@ -46,7 +46,7 @@ Stage 2.5 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-0
 
 Next substage: 2.6 - Rate limiting and abuse protection. NOT STARTED / UNAUTHORIZED.
 
-Exact next action: hard stop. Stage 2.5 documentation closure was the only authorized remaining work.
+Exact next action: owner reviews the CI reliability fix for the concurrent Prisma generation race recorded below. Stage 2.5 remains ACCEPTED / HOSTED VERIFIED / CLOSED.
 
 DO NOT: start Stage 2.6 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken audits, amend, force-push, commit, push, or deploy without explicit authorization.
 
@@ -413,3 +413,54 @@ Stage 0: ACCEPTED. Stage 1: ACCEPTED. Stage 2.1: ACCEPTED / HOSTED VERIFIED / CL
 ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.3: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.4:
 ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.5: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall:
 NOT ACCEPTED. Stage 2.6: NOT STARTED / UNAUTHORIZED. **HARD STOP.**
+
+## CI reliability: concurrent Prisma generation resolved - 2026-10-08
+
+This is a maintenance task, not a new stage. Stage 2.5 acceptance history is unchanged and all stage
+statuses are preserved.
+
+**Incident.** Hosted run 37860601281 failed `pnpm check` with `TS6053: File
+'packages/database/src/generated/prisma/client.ts' not found`. Run 37859811782, on the identical commit,
+passed, so this was an intermittent race rather than a deterministic failure.
+
+**Confirmed root cause.** `packages/database` declared both `build` and `typecheck` as
+`prisma generate && tsc ...`, while `turbo.json` gave both only `dependsOn: ["^build"]`. The `^` prefix
+orders a package's dependencies, not its own tasks, so `@tsms/database#build` and
+`@tsms/database:typecheck` were scheduled in parallel. Both wrote `src/generated/prisma`, and one
+task's `tsc` read the directory while the other was rewriting it.
+
+**Fix.** Generation now has a single owner. `db:generate` is a dedicated Turbo task and the sole
+writer; `build` and `typecheck` depend on it and only read its output. The database package scripts no
+longer invoke Prisma. The task graph went from two parallel writers to one writer ordered before both
+readers.
+
+**Caching.** `db:generate` is `cache: false` on purpose. Generation costs roughly 150-400 ms, and an
+uncached task removes any chance of an incomplete or stale restored directory being treated as a
+successful generation, which is exactly the property the incident was about. `build` and `typecheck`
+keep normal caching; their inputs are git-tracked files, and the schema, Prisma config, and Prisma
+version are all tracked, so any relevant change alters the hash. No migration command was added to
+any build, typecheck, or generate task, and generation requires no database.
+
+**A related defect found at the same time.** `API_PASSWORD_RECOVERY_DELIVERY_MODE` and
+`API_PASSWORD_RECOVERY_URL_BASE` were documented and read by the API but missing from the Turbo
+`globalEnv` list, so they could not affect a cache key. Both were added.
+
+**Validation.** Five consecutive `pnpm check` runs, each starting from a deleted generated-output
+directory, all passed with no failure and no concurrent generation observed. `pnpm build`,
+`pnpm typecheck`, `pnpm test`, `pnpm check`, and `pnpm test:integration` were each verified
+individually from a clean generated state. Full repository validation passed: 148 unit/toolchain
+tests, 214 integration tests, 19 smoke assertions, builds, mobile checks, and `git diff --check`. The
+audit still fails on exactly the two accepted high advisories with no new finding.
+
+**Regression coverage.** `packages/database/tests/generation.test.mjs` asserts the ownership
+property structurally rather than by timing, so it cannot itself be flaky, and it fails the build if
+the graph regresses. Reintroducing the original defect fails two of its assertions.
+
+**Ergonomics change.** Direct package invocations such as `pnpm --filter @tsms/database typecheck` no
+longer generate the client first and require `pnpm db:generate` beforehand. The supported root-level
+commands are unaffected. This is recorded in the package script notes and
+docs/architecture/DEPENDENCY_REVIEW.md.
+
+The Stage 1 follow-up recording this race is **FIX IMPLEMENTED / LOCALLY VALIDATED / HOSTED
+VERIFICATION PENDING**, not yet resolved: the correction must be confirmed by a hosted validate run before the follow-up can close. No
+dependency, lockfile, schema, migration, authentication, tenant, or mobile change was made.
