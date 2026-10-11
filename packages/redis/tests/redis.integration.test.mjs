@@ -55,6 +55,11 @@ describe('Redis integration against a real Redis instance', () => {
     try {
       // Not part of this suite's contract with the developer, but it proves the
       // flush below is scoped: a key on database 0 survives FLUSHDB on database 1.
+      //
+      // This flush is also why the root `test:integration` script runs this package before the others.
+      // Stage 2.6 gave `apps/api` deployment-wide shared state - the Argon2id semaphore is one key
+      // spanning every instance - and a blanket flush here would delete a semaphore another suite was
+      // mid-assertion on if the two packages ran concurrently.
       await other.set('tsms:flush-scope-check', 'intact', 'EX', 30);
       await expect(client.flushdb()).resolves.toBe('OK');
       expect(await other.get('tsms:flush-scope-check')).toBe('intact');

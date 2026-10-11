@@ -107,8 +107,9 @@ credential: same status, same body, same headers. An ineligible request performs
 The ineligible path still pays a comparable amount of work: it runs an Argon2id verification against
 the Stage 2.4 decoy digest and performs a dummy reset-URL build, so it is not distinguishable from
 the eligible path by a single request. As in Stage 2.4 this is **not** a constant-time claim: the
-eligible path additionally writes a row and performs delivery work, repeated sampling can separate
-them, and there is no throttling.
+eligible path additionally writes a row and performs delivery work, and repeated sampling can separate
+them. Stage 2.6 rate limiting bounds how many requests a source or a target may make, but it does not
+make the single comparison constant-time.
 
 Recovery never creates an account. An unknown address is a no-op beyond the fixed response.
 
@@ -225,18 +226,31 @@ resolving successfully, so the test genuinely detects the vulnerability rather t
 
 ## Abuse risks and the deployment blocker
 
-Stage 2.6 owns rate limiting. Stage 2.5 adds these unmitigated risks and must not be deployed:
+Stage 2.6 owns rate limiting and has now implemented it; see [RATE_LIMITING.md](RATE_LIMITING.md) for
+the policies, keys, and outage behaviour. Each risk below states what Stage 2.6 changed and what it
+did not.
 
-- **Recovery email flooding** against one known address, since issuance is unbounded.
-- **Token brute force**, bounded only by 256-bit entropy and the 30-minute lifetime.
-- **Argon2id resource exhaustion**, since both endpoints can trigger a 64 MiB operation and neither
-  is throttled. This is the most direct availability risk in the stage.
-- **Token-request abuse** used to invalidate a victim's existing recovery token, since each issuance
-  supersedes earlier ones.
-- **No delivery provider**, so in production the workflow fails closed rather than sending anything.
+- **Recovery email flooding** against one known address. **Mitigated:** a per-target meter allows 3
+  issuances per hour, metered by **request** rather than by failure - a flooding request succeeds, so a
+  failure-metered control would have limited nothing. Keyed on the normalised address, so unknown and
+  known targets are indistinguishable while being metered identically.
+- **Token brute force.** **Mitigated in volume:** a per-token meter (10 per 15 min) plus a per-source
+  meter (10 per 15 min). Guessing remains bounded by 256-bit entropy and the 30-minute lifetime; the
+  meters bound attempts per token and per source, not the total guess space.
+- **Argon2id resource exhaustion.** **Partially mitigated:** the global verification budget bounds
+  Argon2id verifications _started_ across the deployment at 120 per minute, charged before the handler
+  runs. It does **not** bound simultaneous 64 MiB allocations - that requires a leased semaphore and is
+  recorded as the main gap Stage 2.6 leaves open.
+- **Token-request abuse** used to invalidate a victim's existing recovery token. **Mitigated** by the
+  same per-target meter: issuance now costs budget, so invalidating a victim's outstanding token is
+  rate limited even though issuance supersedes earlier tokens.
+- **No delivery provider.** **Unchanged.** Recovery still fails closed in production, and rate limiting
+  does not make it usable. Public deployment remains prohibited until a real provider exists.
 
-There is **no approved rate limiter to reuse**. Until Stage 2.6 exists, password recovery and the
-Stage 2.4 login endpoint must both stay behind a private network or an operator gate.
+Recovery and the Stage 2.4 login endpoint must still stay behind a private network or an operator gate:
+Stage 2.6 provides the controls, but the deployment blockers recorded in `RATE_LIMITING.md` - a
+production HMAC secret, a decided load-balancer policy, and reviewed limits - are unresolved, and no
+real email provider exists.
 
 ## Test coverage
 
@@ -255,4 +269,7 @@ its own user ids; no assertion depends on a global row count.
 
 No registration or signup, no email verification, no MFA, no tenant or school enrolment, no role or
 permission assignment, no session issuance during recovery, no `AuthenticationEvent` rows, no
-production email provider, no rate limiting, and no session-generation column.
+production email provider, and no session-generation column.
+
+Rate limiting **is** implemented, by Stage 2.6, in [RATE_LIMITING.md](RATE_LIMITING.md). It adds no
+recovery behaviour of its own and changes no contract above.

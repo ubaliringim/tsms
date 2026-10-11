@@ -9,11 +9,16 @@ password credential primitive and the accepted Stage 2.3 session primitive to HT
 
 ## Surface
 
-| Method | Path           | Success              | Failure                                             |
-| ------ | -------------- | -------------------- | --------------------------------------------------- |
-| POST   | `/auth/login`  | `200` + session body | `400` malformed, `401` authentication, `403` origin |
-| GET    | `/auth/me`     | `200` + session body | `401` unauthenticated                               |
-| POST   | `/auth/logout` | `204`, empty body    | `403` origin                                        |
+| Method | Path           | Success              | Failure                                                                                     |
+| ------ | -------------- | -------------------- | ------------------------------------------------------------------------------------------- |
+| POST   | `/auth/login`  | `200` + session body | `400` malformed, `401` authentication, `403` origin, `429` limited, `503` limit unavailable |
+| GET    | `/auth/me`     | `200` + session body | `401` unauthenticated, `429` limited                                                        |
+| POST   | `/auth/logout` | `204`, empty body    | `403` origin, `429` limited                                                                 |
+
+Stage 2.6 adds distributed abuse protection to every route on this surface. Its response contract,
+policies, key design, and outage behaviour are specified in
+[RATE_LIMITING.md](RATE_LIMITING.md); `429` and `503` above are the outcomes defined there. Everything
+documented below for an unthrottled request is unchanged.
 
 `POST /auth/login` and `POST /auth/logout` require a trusted `Origin` header. `GET /auth/me` does
 not: it is not state-changing, and `SameSite=Lax` already prevents a cross-site request from
@@ -175,10 +180,12 @@ decoy paths, so the two remain symmetric.
 
 This is **not** a claim of constant-time HTTP authentication. `verifyPassword` returns before
 Argon2 for a policy-invalid candidate, the database round trips are not equalised, network jitter
-dominates on any real link, and an unbounded number of requests per client is not throttled at all.
+dominates on any real link, and a single request's cost is not reduced by Stage 2.6 rate limiting.
 What is claimed is that an observer cannot separate "no such account" from "wrong password" by
-watching the cost of a single request. The remaining channel is repeated sampling, which is why
-Stage 2.6 rate limiting is a deployment gate rather than a nicety.
+watching the cost of a single request. Stage 2.6 bounds how many attempts a client and an account may
+make, which removes the unbounded repeated-sampling channel in practice; it does not make the single
+comparison constant-time, and the enumeration-resistance tests still assert response equality rather
+than timing equality.
 
 ### Rehash on login
 
@@ -231,11 +238,12 @@ password generated.
 
 ## Residual risk
 
-- **No rate limiting.** Password verification is reachable over HTTP with no per-client or
-  per-account throttle. This is the largest gap in this stage. Stage 2.6 owns full rate limiting and
-  abuse protection; until it exists, exposure must stay behind a private network or an operator
-  gate. **Stage 2.4 is not production-ready against credential stuffing or online password
-  guessing**, and must not be exposed directly to the public internet.
+- **Rate limiting: implemented, not production-validated.** Stage 2.6 added Redis-backed distributed
+  meters covering credential guessing, source volume, and Argon2id workload; see
+  [RATE_LIMITING.md](RATE_LIMITING.md). What it did **not** add is a bound on _simultaneous_ Argon2id
+  verifications - the global budget caps work started, not work in flight - and no production
+  `API_RATE_LIMIT_HMAC_SECRET` or load-balancer policy has been chosen. Those are deployment blockers
+  recorded in that document.
 - **Origin allowlist is not proxy-aware.** A deployment behind a TLS-terminating proxy terminates
   HTTPS itself; it must preserve the browser's `Origin` and must not be relied on to rewrite it.
 - **Additional authenticated mutations will need more.** This stage protects exactly two

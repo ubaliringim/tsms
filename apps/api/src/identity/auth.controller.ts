@@ -10,6 +10,7 @@ import {
   Res,
   UseFilters,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { AuthError, AuthService, type PublicUserProfile } from './auth.service.js';
 import { PasswordRecoveryService } from './password-recovery.service.js';
@@ -23,6 +24,8 @@ import {
 } from './auth-cookie.js';
 import { AuthExceptionFilter } from './auth-exception.filter.js';
 import { TrustedOriginGuard } from './trusted-origin.guard.js';
+import { AbuseProtected, AuthAbuseGuard, abuseDecisionOf } from './auth-abuse.guard.js';
+import { AbuseReservationInterceptor } from './abuse-reservation.interceptor.js';
 
 /** DI token for an injectable clock, so cookie lifetimes are deterministic under test. */
 export const AUTH_CLOCK = Symbol('AUTH_CLOCK');
@@ -71,6 +74,7 @@ const MAX_RECOVERY_EMAIL_LENGTH = 320;
  * membership, role, or permission, because none exists.
  */
 @Controller('auth')
+@UseInterceptors(AbuseReservationInterceptor)
 @UseFilters(AuthExceptionFilter)
 export class AuthController {
   constructor(
@@ -90,12 +94,14 @@ export class AuthController {
    */
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(TrustedOriginGuard)
+  @AbuseProtected('login')
+  @UseGuards(TrustedOriginGuard, AuthAbuseGuard)
   async login(
     @Req() request: PlatformRequest,
     @Res({ passthrough: true }) response: PlatformResponse,
     @Body() body: unknown,
   ): Promise<LoginBody> {
+    this.refuseIfLimited(request);
     this.requireJson(request);
     const input = this.readLoginInput(body);
 
@@ -122,7 +128,10 @@ export class AuthController {
    * cookie here at all.
    */
   @Get('me')
+  @AbuseProtected('me')
+  @UseGuards(AuthAbuseGuard)
   async me(@Req() request: PlatformRequest): Promise<CurrentUserBody> {
+    this.refuseIfLimited(request);
     const token = readSessionCookie(request.headers['cookie'], this.cookiePolicy);
     if (token === null) throw new AuthError('AUTHENTICATION_FAILED');
     return { user: await this.auth.currentUser(token) };
@@ -136,11 +145,16 @@ export class AuthController {
    */
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(TrustedOriginGuard)
+  @AbuseProtected('logout')
+  @UseGuards(TrustedOriginGuard, AuthAbuseGuard)
   async logout(
     @Req() request: PlatformRequest,
     @Res({ passthrough: true }) response: PlatformResponse,
   ): Promise<void> {
+    // Stage 2.6. A declined meter refuses before revocation, and a `Redis` outage does not stop
+    // logout at all: revocation is a PostgreSQL write, so the cookie is still cleared and the session
+    // is still revoked, and the `204` still describes what actually happened.
+    this.refuseIfLimited(request);
     const token = readSessionCookie(request.headers['cookie'], this.cookiePolicy);
     if (token !== null) await this.auth.logout(token);
     response.setHeader('Set-Cookie', clearSessionCookie(this.cookiePolicy));
@@ -154,8 +168,10 @@ export class AuthController {
    */
   @Post('password/forgot')
   @HttpCode(HttpStatus.ACCEPTED)
-  @UseGuards(TrustedOriginGuard)
+  @AbuseProtected('forgot')
+  @UseGuards(TrustedOriginGuard, AuthAbuseGuard)
   async forgotPassword(@Req() request: PlatformRequest, @Body() body: unknown): Promise<unknown> {
+    this.refuseIfLimited(request);
     this.requireJson(request);
     const { email } = this.readRecoveryRequest(body, ['email']);
     await this.recovery.requestRecovery(email);
@@ -170,11 +186,26 @@ export class AuthController {
    */
   @Post('password/reset')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(TrustedOriginGuard)
+  @AbuseProtected('reset')
+  @UseGuards(TrustedOriginGuard, AuthAbuseGuard)
   async resetPassword(@Req() request: PlatformRequest, @Body() body: unknown): Promise<void> {
+    this.refuseIfLimited(request);
     this.requireJson(request);
     const { token, newPassword } = this.readRecoveryRequest(body, ['token', 'newPassword']);
     await this.recovery.resetPassword(token, newPassword);
+  }
+
+  /**
+   * Refuse a request whose abuse-protection meter declined it.
+   *
+   * Called as the first statement of every protected handler, so the refusal happens before any
+   * expensive work, any database write, and any token issuance. The guard has already set
+   * `Retry-After` and has already thrown for an unconfirmable meter on a fail-closed endpoint, so
+   * this only covers the case where enforcement worked and declined.
+   */
+  private refuseIfLimited(request: PlatformRequest): void {
+    const decision = abuseDecisionOf(request);
+    if (decision?.kind === 'limited') throw new AuthError('RATE_LIMITED');
   }
 
   /**

@@ -14,6 +14,7 @@ const environment = {
   // Stage 2.4 requires an explicit allowlist. These tests never call an authentication route, so
   // the value only has to satisfy startup validation.
   API_TRUSTED_ORIGINS: ['http://127.0.0.1:3000'],
+  API_RATE_LIMIT_HMAC_SECRET: 'stage26_health_test_rate_limit_key_0123456789abcdefgh',
 };
 
 describe('API HTTP boundary', () => {

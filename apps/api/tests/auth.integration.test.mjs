@@ -4,6 +4,7 @@ import { parseIntegrationEnvironment } from '@tsms/config';
 import { createDatabaseClient, closeDatabase } from '@tsms/database';
 import { assertDisposableTestDatabase } from '@tsms/database/testing';
 import { createApplication } from '../dist/application.js';
+import { resetRateLimitState } from './support/rate-limit-state.mjs';
 import { hashPassword } from '../dist/identity/password-hasher.js';
 import { hashSessionToken } from '../dist/identity/session-token.js';
 
@@ -16,19 +17,21 @@ const PASSWORD = 'correct horse battery staple';
 /** Policy-valid, so it reaches Argon2 rather than short-circuiting in the policy check. */
 const OTHER_PASSWORD = 'entirely different secret phrase';
 
+const integrationEnv = parseIntegrationEnvironment(process.env);
+
 let db, app, origin, ids, emails;
 
 beforeAll(async () => {
-  const env = parseIntegrationEnvironment(process.env);
-  const databaseUrl = assertDisposableTestDatabase(env.TEST_DATABASE_URL);
+  const databaseUrl = assertDisposableTestDatabase(integrationEnv.TEST_DATABASE_URL);
   db = createDatabaseClient(databaseUrl);
   app = await createApplication({
     NODE_ENV: 'test',
     API_HOST: '127.0.0.1',
     API_PORT: 4000,
     DATABASE_URL: databaseUrl,
-    REDIS_URL: env.TEST_REDIS_URL,
+    REDIS_URL: integrationEnv.TEST_REDIS_URL,
     API_TRUSTED_ORIGINS: [TRUSTED_ORIGIN],
+    API_RATE_LIMIT_HMAC_SECRET: 'stage26_auth_integration_rate_limit_key_0123456789',
   });
   await app.listen(0, '127.0.0.1');
   origin = await app.getUrl();
@@ -39,7 +42,11 @@ afterAll(async () => {
   if (db) await closeDatabase(db);
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Stage 2.6: each test starts with an empty rate-limit budget, so one test's traffic
+  // cannot consume another's allowance and fail an assertion for the wrong reason. The real
+  // limiter runs throughout; only the accumulated budget is reset.
+  await resetRateLimitState(integrationEnv.TEST_REDIS_URL);
   ids = [];
   emails = [];
 });
@@ -319,6 +326,7 @@ describe('POST /auth/login', () => {
       DATABASE_URL: 'postgresql://tsms:tsms_test@127.0.0.1:5499/tsms_test',
       REDIS_URL: 'redis://:tsms_test@127.0.0.1:6399/1',
       API_TRUSTED_ORIGINS: [TRUSTED_ORIGIN],
+      API_RATE_LIMIT_HMAC_SECRET: 'stage26_auth_degraded_integration_rate_limit_key_0123',
     });
     await unavailable.listen(0, '127.0.0.1');
     const broken = await unavailable.getUrl();

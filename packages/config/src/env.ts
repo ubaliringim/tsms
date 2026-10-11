@@ -133,6 +133,68 @@ const passwordRecoveryUrlBase = z
  */
 const passwordRecoveryDeliveryMode = z.enum(['disabled', 'development-only']);
 
+/**
+ * Secret for deriving rate-limit keys - Stage 2.6.
+ *
+ * Keys must not contain raw addresses, recovery tokens, or session tokens, so every subject is
+ * reduced to an HMAC before it reaches Redis. This is that HMAC key.
+ *
+ * It is deliberately *not* authentication material: it never signs a session, never authorises a
+ * request, and is never sent to a client. It is required in every environment because a deployment
+ * that cannot derive stable keys cannot enforce a distributed limit at all, and silently falling
+ * back to process-local counters would recreate the gap Stage 2.6 exists to close.
+ *
+ * Length is bounded at both ends. Too short and an attacker who reads a Redis key could brute-force
+ * candidate addresses; too long and there is no operational benefit. Rejecting a value that matches
+ * a known placeholder keeps a copy-pasted development string from becoming a production key.
+ */
+const PLACEHOLDER_SECRETS = new Set([
+  'change-me',
+  'changeme',
+  'placeholder',
+  'example',
+  'secret',
+  'test',
+]);
+
+/**
+ * Reject a value whose characters are effectively one repeated symbol.
+ *
+ * A length check alone does not establish a secret: `'x'.repeat(32)` passes any minimum-length rule and
+ * carries almost no entropy, so anyone who guessed the pattern could derive every rate-limit key.
+ *
+ * This is deliberately narrow. It catches the single-value case and short alternating runs, which are the
+ * shapes a length rule misses and which appear in practice when a value is padded to satisfy validation.
+ * It is **not** a claim to measure entropy, and it cannot be: real entropy comes from the generator that
+ * produced the value, not from inspecting it. That remains an operator responsibility, recorded as a
+ * deployment requirement.
+ */
+function hasTrivialCharacterStructure(value: string): boolean {
+  if (new Set(value).size < 8) return true;
+  // A short cycle repeated to length, such as 'abcdabcd...'.
+  for (let period = 1; period <= 4; period += 1) {
+    const pattern = value.slice(0, period);
+    if (pattern.length < period) continue;
+    if (value === pattern.repeat(Math.ceil(value.length / period)).slice(0, value.length))
+      return true;
+  }
+  return false;
+}
+
+const rateLimitHmacSecret = z
+  .string()
+  .min(32, 'must be at least 32 characters')
+  .max(512, 'must be at most 512 characters')
+  .refine((value) => /^[A-Za-z0-9_-]+$/.test(value), {
+    message: 'must contain only letters, digits, underscore, or hyphen',
+  })
+  .refine((value) => !PLACEHOLDER_SECRETS.has(value.toLowerCase()), {
+    message: 'must not be a placeholder value',
+  })
+  .refine((value) => !hasTrivialCharacterStructure(value), {
+    message: 'must not be a single repeated character or a short repeating pattern',
+  });
+
 const apiSchema = z
   .object({
     NODE_ENV: mode,
@@ -143,6 +205,7 @@ const apiSchema = z
     API_TRUSTED_ORIGINS: apiTrustedOrigins,
     API_PASSWORD_RECOVERY_URL_BASE: passwordRecoveryUrlBase.optional(),
     API_PASSWORD_RECOVERY_DELIVERY_MODE: passwordRecoveryDeliveryMode.default('disabled'),
+    API_RATE_LIMIT_HMAC_SECRET: rateLimitHmacSecret,
   })
   // A recovery URL is only meaningful when something can deliver it, and delivery in production
   // needs a real provider this stage does not have. Both are startup failures, not runtime surprises.

@@ -27,6 +27,18 @@ const PUBLIC_BODY: Record<AuthErrorCode, { statusCode: number; error: string }> 
   RECOVERY_TOKEN_INVALID: { statusCode: HttpStatus.UNAUTHORIZED, error: 'recovery_token_invalid' },
   // A policy rejection describes the submitted password only, never the account or the token.
   INVALID_PASSWORD: { statusCode: HttpStatus.BAD_REQUEST, error: 'password_policy_violation' },
+  /**
+   * Stage 2.6. One body for every exceeded meter, on every endpoint and dimension.
+   *
+   * It deliberately does not vary by dimension, so a caller cannot learn whether it was its own
+   * source, its own account, or the deployment-wide verification budget that ran out - each of which
+   * would be a different thing to work around. It carries no remaining count, no bucket identifier,
+   * and no key material, so a refused request reveals nothing about the counters themselves.
+   *
+   * The same fixed body is used for an existing account and a nonexistent one, and for a valid
+   * recovery token and an invalid one, so a `429` cannot become an enumeration signal.
+   */
+  RATE_LIMITED: { statusCode: HttpStatus.TOO_MANY_REQUESTS, error: 'rate_limited' },
 };
 
 /**

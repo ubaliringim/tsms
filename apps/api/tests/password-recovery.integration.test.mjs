@@ -4,6 +4,7 @@ import { parseIntegrationEnvironment } from '@tsms/config';
 import { createDatabaseClient, closeDatabase } from '@tsms/database';
 import { assertDisposableTestDatabase } from '@tsms/database/testing';
 import { createApplication } from '../dist/application.js';
+import { resetRateLimitState } from './support/rate-limit-state.mjs';
 import { hashPassword } from '../dist/identity/password-hasher.js';
 import {
   generateRecoveryToken,
@@ -18,19 +19,21 @@ const RECOVERY_BASE = 'https://app.example.test/account/recover';
 const OLD_PASSWORD = 'the original password value';
 const NEW_PASSWORD = 'a brand new password value';
 
+const integrationEnv = parseIntegrationEnvironment(process.env);
+
 let db, app, origin, delivery, ids;
 
 beforeAll(async () => {
-  const env = parseIntegrationEnvironment(process.env);
-  const databaseUrl = assertDisposableTestDatabase(env.TEST_DATABASE_URL);
+  const databaseUrl = assertDisposableTestDatabase(integrationEnv.TEST_DATABASE_URL);
   db = createDatabaseClient(databaseUrl);
   app = await createApplication({
     NODE_ENV: 'test',
     API_HOST: '127.0.0.1',
     API_PORT: 4000,
     DATABASE_URL: databaseUrl,
-    REDIS_URL: env.TEST_REDIS_URL,
+    REDIS_URL: integrationEnv.TEST_REDIS_URL,
     API_TRUSTED_ORIGINS: [ORIGIN],
+    API_RATE_LIMIT_HMAC_SECRET: 'stage26_recovery_integration_rate_limit_key_01',
     API_PASSWORD_RECOVERY_URL_BASE: RECOVERY_BASE,
     API_PASSWORD_RECOVERY_DELIVERY_MODE: 'development-only',
   });
@@ -46,7 +49,11 @@ afterAll(async () => {
   if (db) await closeDatabase(db);
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Stage 2.6: each test starts with an empty rate-limit budget, so one test's traffic
+  // cannot consume another's allowance and fail an assertion for the wrong reason. The real
+  // limiter runs throughout; only the accumulated budget is reset.
+  await resetRateLimitState(integrationEnv.TEST_REDIS_URL);
   ids = [];
   delivery.clear();
 });
@@ -724,15 +731,15 @@ describe('password recovery HTTP security', () => {
 
 describe('recovery with delivery disabled', () => {
   it('fails closed without creating a token', async () => {
-    const env = parseIntegrationEnvironment(process.env);
-    const databaseUrl = assertDisposableTestDatabase(env.TEST_DATABASE_URL);
+    const databaseUrl = assertDisposableTestDatabase(integrationEnv.TEST_DATABASE_URL);
     const closedApp = await createApplication({
       NODE_ENV: 'test',
       API_HOST: '127.0.0.1',
       API_PORT: 4000,
       DATABASE_URL: databaseUrl,
-      REDIS_URL: env.TEST_REDIS_URL,
+      REDIS_URL: integrationEnv.TEST_REDIS_URL,
       API_TRUSTED_ORIGINS: [ORIGIN],
+      API_RATE_LIMIT_HMAC_SECRET: 'stage26_recovery_closed_integration_rate_limit_key_012',
       API_PASSWORD_RECOVERY_DELIVERY_MODE: 'disabled',
     });
     await closedApp.listen(0, '127.0.0.1');

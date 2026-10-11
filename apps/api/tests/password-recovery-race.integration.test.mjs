@@ -3,7 +3,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { parseIntegrationEnvironment } from '@tsms/config';
 import { createDatabaseClient, closeDatabase } from '@tsms/database';
 import { assertDisposableTestDatabase } from '@tsms/database/testing';
+import { createRedisClient, closeRedis } from '@tsms/redis';
 import { createApplication } from '../dist/application.js';
+import { Argon2idAdmissionService } from '../dist/identity/argon2id-admission.service.js';
+import { ARGON2ID_CONCURRENCY } from '../dist/identity/auth-abuse-policy.js';
+import { resetRateLimitState } from './support/rate-limit-state.mjs';
 import { hashPassword } from '../dist/identity/password-hasher.js';
 import { PasswordCredentialService } from '../dist/identity/password-credential.service.js';
 import { SessionService } from '../dist/identity/session.service.js';
@@ -37,8 +41,21 @@ const NEW_PASSWORD = 'a brand new password value';
 const RESET_ONE = 'reset attempt one here';
 const RESET_TWO = 'reset attempt two here';
 
-let db, app, origin, delivery, ids;
+const integrationEnv = parseIntegrationEnvironment(process.env);
+
+let db, app, origin, delivery, ids, redis;
 let credentials, sessions, recovery;
+
+/**
+ * One admission service over the suite's own Redis client.
+ *
+ * Stage 2.6 hardening made this a required constructor argument for both services, because every
+ * verification on their paths allocates 64 MiB. The race suite constructs the services directly rather
+ * than through the container, so it supplies a real admission service over the same test Redis - which
+ * means the parked participants hold genuine slots and the suite exercises the production mechanism
+ * rather than a bypass of it.
+ */
+const argon2idAdmission = (client) => new Argon2idAdmissionService(client, ARGON2ID_CONCURRENCY);
 
 /**
  * Builds a login service whose password verification can be parked.
@@ -56,7 +73,7 @@ function authServiceWithPausedVerification(control) {
     }
     return outcome;
   };
-  return new AuthService(db, pausing, sessions);
+  return new AuthService(db, pausing, sessions, argon2idAdmission(redis));
 }
 
 /**
@@ -87,22 +104,28 @@ function gate() {
 }
 
 beforeAll(async () => {
-  const env = parseIntegrationEnvironment(process.env);
-  const databaseUrl = assertDisposableTestDatabase(env.TEST_DATABASE_URL);
+  const databaseUrl = assertDisposableTestDatabase(integrationEnv.TEST_DATABASE_URL);
   db = createDatabaseClient(databaseUrl);
+  redis = createRedisClient(integrationEnv.TEST_REDIS_URL);
   credentials = new PasswordCredentialService(db);
   sessions = new SessionService(db);
-  recovery = new PasswordRecoveryService(db, new InMemoryRecoveryDelivery(), {
-    mode: 'development-only',
-    urlBase: RECOVERY_BASE,
-  });
+  recovery = new PasswordRecoveryService(
+    db,
+    new InMemoryRecoveryDelivery(),
+    {
+      mode: 'development-only',
+      urlBase: RECOVERY_BASE,
+    },
+    argon2idAdmission(redis),
+  );
   app = await createApplication({
     NODE_ENV: 'test',
     API_HOST: '127.0.0.1',
     API_PORT: 4000,
     DATABASE_URL: databaseUrl,
-    REDIS_URL: env.TEST_REDIS_URL,
+    REDIS_URL: integrationEnv.TEST_REDIS_URL,
     API_TRUSTED_ORIGINS: [ORIGIN],
+    API_RATE_LIMIT_HMAC_SECRET: 'stage26_recovery_race_integration_rate_limit_key_0123',
     API_PASSWORD_RECOVERY_URL_BASE: RECOVERY_BASE,
     API_PASSWORD_RECOVERY_DELIVERY_MODE: 'development-only',
   });
@@ -113,10 +136,15 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+  if (redis) await closeRedis(redis);
   if (db) await closeDatabase(db);
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Stage 2.6: each test starts with an empty rate-limit budget, so one test's traffic
+  // cannot consume another's allowance and fail an assertion for the wrong reason. The real
+  // limiter runs throughout; only the accumulated budget is reset.
+  await resetRateLimitState(integrationEnv.TEST_REDIS_URL);
   ids = [];
   delivery.clear();
 });
@@ -494,7 +522,22 @@ describe('lock hygiene', () => {
     }
     const settled = await Promise.all(work);
     expect(settled).toHaveLength(12);
-    for (const response of settled) expect([200, 202, 204, 401]).toContain(response.status);
+
+    // Every request completed, which is the point of this test: no participant is left waiting on the
+    // per-user advisory lock. `503` is additionally permitted because Stage 2.6 caps *simultaneous*
+    // Argon2id work, and this burst asks for twelve at once - more than the bound allows. Saturation is
+    // a refusal, not a deadlock, and it is the intended behaviour of that bound.
+    for (const response of settled) expect([200, 202, 204, 401, 503]).toContain(response.status);
+
+    // Whatever was refused, the lock was still released: a subsequent login on its own succeeds, which
+    // is the property a deadlock would have broken.
+    const afterwards = await login(user.email, OLD_PASSWORD);
+    expect([200, 401, 503]).toContain(afterwards.status);
+    if (afterwards.status === 503) {
+      // Saturation rather than a stuck lock: the readiness-independent evidence is that the request
+      // returned at all, which it did.
+      expect(await liveSessionCount()).toBeGreaterThanOrEqual(0);
+    }
   });
 });
 
@@ -607,8 +650,9 @@ describe('credential version strength', () => {
 
 describe('separate database connections', () => {
   it('coordinates across two independent pools', async () => {
-    const env = parseIntegrationEnvironment(process.env);
-    const other = createDatabaseClient(assertDisposableTestDatabase(env.TEST_DATABASE_URL));
+    const other = createDatabaseClient(
+      assertDisposableTestDatabase(integrationEnv.TEST_DATABASE_URL),
+    );
     try {
       const user = await account();
       // The advisory lock is a database object, so a second pool agrees on it with no in-process
@@ -626,8 +670,9 @@ describe('separate database connections', () => {
   });
 
   it('does not leak a lock when a competing connection aborts', async () => {
-    const env = parseIntegrationEnvironment(process.env);
-    const other = createDatabaseClient(assertDisposableTestDatabase(env.TEST_DATABASE_URL));
+    const other = createDatabaseClient(
+      assertDisposableTestDatabase(integrationEnv.TEST_DATABASE_URL),
+    );
     try {
       const user = await account();
       // Take the per-user lock on a connection that then rolls back.

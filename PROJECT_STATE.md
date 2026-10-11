@@ -4,7 +4,7 @@ Project: TSMS - TeamStack School Management System
 
 Company: TeamStack Technologies LTD
 
-Updated: 2026-10-08
+Updated: 2026-10-09
 
 Phase: Foundation
 
@@ -44,11 +44,13 @@ Stage 2.4 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-0
 
 Stage 2.5 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Implementation commit `e2bb3b79aa774b64e155b273b35af6dd17a47242` (`feat: add secure password recovery`); hosted run [37859811782](https://github.com/ubaliringim/tsms/actions/runs/37859811782). Record at tasks/CURRENT.md and docs/security/PASSWORD_RECOVERY.md.
 
-Next substage: 2.6 - Rate limiting and abuse protection. NOT STARTED / UNAUTHORIZED.
+Stage 2.6 status: LOCALLY VALIDATED / AWAITING OWNER REVIEW. Distributed abuse protection is implemented and passes full local validation. **Not accepted, not hosted verified, not committed, not pushed, not deployed.** Record at tasks/CURRENT.md and docs/security/RATE_LIMITING.md.
 
-Exact next action: owner reviews the CI reliability fix for the concurrent Prisma generation race recorded below. Stage 2.5 remains ACCEPTED / HOSTED VERIFIED / CLOSED.
+Stage 2 overall: NOT ACCEPTED. Stage 2.7 and later: NOT STARTED / UNAUTHORIZED.
 
-DO NOT: start Stage 2.6 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken audits, amend, force-push, commit, push, or deploy without explicit authorization.
+Exact next action: owner reviews the Stage 2.6 implementation and decides on the escalation recorded below - in particular whether to accept a global Argon2id **rate** budget with no bound on **simultaneous** verifications, and how a load balancer should influence client identity. Nothing may be committed or deployed without explicit authorization.
+
+DO NOT: start Stage 2.7 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken audits, amend, force-push, commit, push, or deploy without explicit authorization.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -237,8 +239,12 @@ overall workflow remains red and is **not** green. Neither advisory is marked re
 Acceptance is bounded to global identity authentication as implemented. The following stay explicitly
 open and are not resolved by this acceptance:
 
-- **No login rate limiting.** Password verification is reachable over HTTP without throttling. Public
-  internet deployment is prohibited until Stage 2.6 delivers abuse protection.
+- **Login rate limiting and Argon2id workload protection: implemented, not deployment-validated.** Stage 2.6
+  plus its hardening review added Redis-backed per-source and per-account meters, a deployment-wide Argon2id
+  rate budget, and a leased semaphore bounding _simultaneous_ Argon2id work. See
+  [docs/security/RATE_LIMITING.md](docs/security/RATE_LIMITING.md). What remains unresolved: no proxy-trust
+  model, no production HMAC secret chosen, and untuned thresholds. Public internet deployment remains
+  prohibited.
 - The trusted `Origin` allowlist is not proxy-aware; a TLS-terminating proxy must preserve the
   browser-supplied `Origin`.
 - A session-bound CSRF token for future authenticated mutations remains deferred.
@@ -298,10 +304,12 @@ Issuance is enumeration-resistant: unknown address, disabled account, and missin
 byte-identical `202` and perform no write, while still paying a real Argon2id verification against the
 Stage 2.4 decoy digest. This is explicitly not a constant-time claim.
 
-Public deployment remains prohibited. Stage 2.5 adds unmitigated abuse risk - recovery email flooding,
-token brute force, and especially Argon2id resource exhaustion, since both endpoints can trigger a
-64 MiB operation with no throttle. Stage 2.6 owns the fix and no approved rate limiter exists to
-reuse.
+Public deployment remains prohibited. At Stage 2.5 acceptance these endpoints carried unmitigated abuse
+risk - recovery email flooding, token brute force, and especially Argon2id resource exhaustion, since both
+could trigger a 64 MiB operation with no throttle. Stage 2.6 and its hardening review now meter all of
+them: recovery per-source and per-target requests, reset per-source and per-token attempts, and a
+deployment-wide bound on simultaneous Argon2id work. See
+[docs/security/RATE_LIMITING.md](docs/security/RATE_LIMITING.md).
 
 Local validation passed with no dependency, lockfile, schema, migration, or accepted-document change:
 frozen install, Prisma generation, formatting, lint, typecheck across 11 tasks, 135 unit/toolchain
@@ -492,6 +500,231 @@ decision.
 
 Stage 2.5 remains ACCEPTED / HOSTED VERIFIED / CLOSED and its closure history is unchanged. Stage 2
 overall remains NOT ACCEPTED. Stage 2.6 remains NOT STARTED / UNAUTHORIZED.
+
+## Stage 2.6 - Rate limiting and abuse protection - 2026-10-09
+
+**Status: LOCALLY VALIDATED / AWAITING OWNER REVIEW.** Not accepted, not hosted verified, not
+committed, not pushed, not deployed. Hardened after an owner-commissioned review closed two real weaknesses.
+
+All five authentication routes are now protected by Redis-backed distributed meters that share state
+across API instances, and **all Argon2id work is bounded both by rate and by a deployment-wide
+concurrency bound**. The design, policies, key construction, outage behaviour, and residual risks are
+specified in [docs/security/RATE_LIMITING.md](docs/security/RATE_LIMITING.md).
+
+## Stage 2.6 hardening review - 2026-10-09
+
+An owner-commissioned review investigated two potential weaknesses. **Both were real**, and both had been
+previously written up as acceptable limitations - which is precisely what made them worth reviewing.
+
+### Finding 1: concurrent requests bypassed every failure-metered limit
+
+**Root cause.** Admission for a failure-metered endpoint was a _check that wrote nothing_, and the charge
+happened after the handler returned. The admission decision and the charge were therefore not atomic, so N
+simultaneous requests all read the same untouched bucket and all proceeded. The limiter's own documentation
+described this as "bounded by the number of requests already in flight" - a phrasing that turned a real
+bypass into what looked like an accepted limitation.
+
+**Demonstrated, not assumed.** Against real Redis, before any fix: **20 concurrent failed logins were all
+admitted against a configured per-account allowance of 8** (`{admitted: 20, refused: 0}`). Twenty concurrent
+invalid reset attempts were all admitted against an allowance of 10. The same burst split across two
+independently created API instances was likewise fully admitted, confirming the bypass was distributed
+rather than per-process.
+
+**Correction: reserve, then refund.** Admission now reserves a token on every dimension atomically, so
+simultaneous requests contend for real state. The reservation is refunded whenever the outcome was not a
+credential failure, which is what keeps a legitimate attempt free. `AUTHENTICATION_FAILED` and
+`RECOVERY_TOKEN_INVALID` keep their reservation; the refusal set is exported as `CHARGED_ERROR_CODES` so it
+cannot change silently if a handler is refactored.
+
+**Result.** A burst of twenty against an allowance of eight now admits at most eight. Same for reset, same
+across separate instances. Sequential and concurrent traffic are bounded identically - concurrency changed
+the mechanism, not the limit.
+
+### Finding 2: no bound on simultaneous Argon2id allocations
+
+**Root cause.** A per-minute bucket bounds work _started_, not work _running_. A bucket that starts full
+hands out its entire capacity at once, so the 120-token budget permitted a 120-way burst of 64 MiB
+allocations. No concurrency bound existed. This had been explicitly escalated rather than claimed as
+solved, which was the correct call.
+
+**Correction: a deployment-wide leased semaphore**, enforced immediately before every allocation. One Redis
+sorted set of lease holders; each member is a 32-byte random id scored by its expiry; acquire prunes expired
+members and refuses at capacity, release removes only that holder and only if present, renew extends only
+that holder and only if present.
+
+**Why a Redis lease is safe here specifically.** Every endpoint that can reach Argon2id _already_ failed
+closed when Redis was unreachable, because the rate limiter is consulted first. Adding a Redis-backed
+admission step therefore introduces **no new failure mode**: if Redis is down, the request was already going
+to be refused before any Argon2id was attempted.
+
+**Every Argon2id path is covered** - real verification, the decoy burn for an unknown or ineligible
+account, and reset credential hashing - because both services take the admission service as a _required_
+constructor argument rather than an optional one.
+
+**Sizing, and why 8.** 512 MiB of transient allocation fleet-wide, roughly 80 verifications per second. The
+bound must sit _above_ the product's legitimate concurrency: the accepted Stage 2.5 contract includes six
+concurrent valid logins all being admitted, and an initial capacity of 4 broke exactly that. A control below
+legitimate concurrency is the outage, not the protection.
+
+**Residual.** A lease that expires while its work is still running permits bounded over-admission. The lease
+is 30 s against a ~100 ms operation with renewal every 10 s, so it requires an event-loop-starved process.
+Recorded rather than hidden.
+
+### Secret validation hardened
+
+A length check alone does not establish a secret - `'x'.repeat(32)` satisfies any minimum length and carries
+almost no entropy. Startup now also rejects a single repeated character or a short repeating pattern. The
+rule is deliberately narrow and is **not** a claim to measure entropy: a legitimate hex-shaped secret, which
+is what `crypto.randomBytes(32)` renders as, is explicitly accepted, because rejecting it would push
+operators toward weaker values. Sharing across replicas, injection rather than commitment, and never logging
+remain operational requirements, recorded as deployment blockers.
+
+### Four defects found during the hardening itself
+
+1. **Redis replies to `TIME` with bulk strings.** The semaphore assumed numbers, so every admission was refused as unreadable and login and both recovery endpoints returned `503`. Found by an integration run failing every login; the unit test could not have caught it because it supplied the numeric shape the code wrongly expected.
+2. **An admission refusal in password reset was reported as a password-policy violation** (`400`) instead of a service failure - conflating two distinguishable outcomes and disclosing that no hashing had been attempted. Found by the existing Stage 2.5 reset suite.
+3. **The crash-recovery test passed with the expiry prune removed**, because the key `PEXPIRE` was reclaiming capacity instead of the prune. A test that could not detect its own defect. Found by a deliberate negative control. The test was rewritten to isolate the prune and now fails when it is removed.
+4. **The concurrency bound of 4 broke an accepted guarantee**, refusing the excess in the Stage 2.5 suite that asserts six concurrent valid logins succeed. Found by the accepted suite the hardening was required not to weaken.
+
+### Negative controls
+
+Three, each run deliberately to confirm the tests detect what they claim:
+
+- **The bypass itself** - the probe suite recorded the pre-fix behaviour verbatim (20 admitted of 20); after the fix the same probe is bounded.
+- **The expiry prune** - removing it left the original test green, proving the test was detecting the key TTL. After the rewrite, removing it fails the test.
+- **The all-or-nothing write rule** - making a refused request write to every dimension fails 3 tests.
+
+### A test-isolation defect found and fixed
+
+Three consecutive full-suite runs exposed intermittent failures in the hardening suites. The cause was
+cross-suite interference over state that is **deployment-wide by design**, not a defect in either control.
+
+- The Argon2id semaphore is one key spanning every instance, so it is shared deployment state, not a per-suite fixture.
+- `apps/api` and `packages/redis` integration suites run concurrently against the same logical Redis database, and both asserted on that shared key.
+- `packages/redis` has an **accepted Stage 1 test that calls `FLUSHDB`** on the test database, deleting the semaphore and the rate-limit buckets out from under `apps/api` mid-run.
+- A first attempt excluded the semaphore key from the API suites' cleanup, which fixed the cross-package collision but then left stale holders from earlier suites within the same package, because those run sequentially.
+
+**Resolution.** The root `test:integration` script now runs `@tsms/redis` first and every other package
+afterwards, so the `FLUSHDB` cannot overlap another suite. The Redis semaphore suite additionally uses its
+own key namespace. The API suites reset the full rate-limit namespace, including the semaphore, because
+they own it exclusively. Turbo cannot express a cross-package task dependency without also declaring it for
+every package, which fails with `depends on itself`, so sequencing at the root script is the smallest
+correct change.
+
+**Not changed:** the `FLUSHDB` assertion is preserved unchanged and still proves a flush is scoped to the
+logical database. No production code changed, and the Prisma generation task graph is untouched.
+**Verification:** three consecutive full `pnpm test:integration` runs, all green - 52 Redis, 35 database,
+239 API.
+
+### Hardening validation
+
+Frozen install PASS (lockfile unchanged) · db:generate PASS (no schema or migration change) · format PASS ·
+lint PASS (zero warnings) · typecheck PASS (12 tasks) · unit tests PASS at **233** (config 37, Redis 4,
+database 17, worker 4, API 182 including 61 rate-limit and 24 hardening cases, plus one Node toolchain test) ·
+build PASS (8 tasks) · check PASS · integration tests PASS at **326** (API 239 including 6 concurrency-probe
+and 30 hardening cases, Redis 52 including 15 semaphore cases, database 35), none skipped, 3 migrations with
+0 pending · smoke PASS at 22 · mobile check PASS · Android export PASS at 578 modules · git diff --check
+PASS. Audit **EXPECTED FAIL** on exactly node-forge `GHSA-86w9-cpqp-85rv` and braces
+`GHSA-vfj7-8cjw-p6xm` - no new finding, no suppression, threshold unchanged. Hosted CI **NOT RUN**,
+because nothing is committed.
+
+One unrelated observation: a single `pnpm test` invocation failed in the Next.js **control** build because
+`/_global-error` exceeded its 60-second budget and was retried. It passed on the following invocation and no
+Stage 2.6 file is involved in that build.
+
+### The original Stage 2.6 record
+
+**Status: LOCALLY VALIDATED / AWAITING OWNER REVIEW.** Not accepted, not hosted verified, not
+committed, not pushed, not deployed.
+
+All five authentication routes are now protected by Redis-backed distributed meters that share state
+across API instances. The design, policies, key construction, outage behaviour, and residual risks are
+specified in [docs/security/RATE_LIMITING.md](docs/security/RATE_LIMITING.md).
+
+**Algorithm.** One Redis Lua script evaluates every dimension of a request atomically as a token
+bucket. A request is admitted only when every dimension has capacity, and **nothing is written unless
+every dimension admits**, so a refusal cannot drain an unrelated budget. Time comes from Redis `TIME`,
+never the caller, so every instance refills identically despite local clock skew. The script that
+creates a key also sets its expiry, so no crash leaves a key without a TTL. Every key carries the
+`{tsms-rl}` hash tag, keeping a multi-key script inside one cluster slot.
+
+**Trusted client identity.** The transport peer address only. `X-Forwarded-For`, `X-Real-IP`,
+`Forwarded`, `CF-Connecting-IP`, `True-Client-IP`, `X-Client-IP`, and `X-Original-Forwarded-For` are
+all ignored, as are `request.ip` and `request.hostname`. `trust proxy` is not enabled and there is no
+configuration to enable it. Addresses are normalised so IPv4, IPv4-mapped IPv6, IPv4-compatible IPv6,
+and every RFC 5952 spelling of an IPv6 address resolve to one bucket; scoped addresses are rejected
+and an unusable peer collapses to one shared bucket. **No claim is made that TSMS can identify an
+individual client**: every device behind one NAT shares a source bucket, which is why per-account and
+per-target meters are always applied alongside it.
+
+**Key privacy.** Keys are `tsms:rl:v1:{tsms-rl}:<endpoint>:<dimension>:<128-bit hex HMAC>`. No raw
+email address, recovery token, session token, password hash, or request body ever becomes key
+material. The endpoint and dimension are inside the HMAC message, so one subject cannot be correlated
+across endpoints from key material alone. The secret is `API_RATE_LIMIT_HMAC_SECRET`, validated at
+startup and required in every environment; it is not authentication material, and **every replica must
+share it**, because per-instance values silently turn a distributed limit into a per-instance one.
+
+**Policies.** Login 10 per 5 min per address and 8 per 15 min per account; recovery 5 per 15 min per
+address and 3 per 1 h per target; reset 10 per 15 min per address and per token; `me` 120 per min;
+`logout` 30 per min; plus a global Argon2id budget of 120 per minute across the whole deployment. The
+numbers are conservative development defaults chosen against a measured ~100 ms Argon2id cost, not
+industry-standard guidance, and they are frozen source constants rather than environment variables.
+
+**Requests versus failures.** `login` and `reset` are metered on **failures**, so a correct sign-in
+spends nothing and colleagues behind one NAT cannot lock each other out. `forgot` is metered on
+**requests**, which is essential rather than stylistic: the abuse it exists to stop is email flooding,
+and a flooding request _succeeds_ - it answers `202` and sends a message - so a failure-metered control
+would have limited nothing at all.
+
+**Outage behaviour.** Login and both recovery endpoints fail closed with the accepted fixed `503`
+before any Argon2id is attempted and before any recovery token is issued. A malformed Redis reply is
+never treated as permission. Redis timeouts are bounded at 750 ms. Driver messages are discarded
+because ioredis can include the connection password. `me` proceeds during an outage because it spends
+nothing. Logout proceeds **and still revokes**, because revocation is a PostgreSQL write and Redis only
+ever provided the throttle: the cookie is cleared and the `204` remains a truthful claim.
+
+**Enumeration resistance.** Target keys derive from the normalised address, so existing and nonexistent
+accounts are metered identically with no database lookup on the key path. Recovery is metered by
+request precisely so an unknown target is not free. Known and unknown targets return byte-identical
+status, body, and headers at every position including the refusal. Not a constant-time claim.
+
+**Defects found and fixed during implementation**, each caught by a test rather than by review:
+
+1. IPv6 canonicalisation emitted padded groups, so `2001:db8::1` and `2001:0db8::0001` were two
+   different clients with two independent buckets - a bypass by textual representation alone.
+2. A failure-metered recovery meter would never have limited anything, since flooding requests succeed.
+3. The initial design charged successful logins, letting one NAT address lock out correct users.
+4. A malformed recovery token produced no target dimension, leaving non-canonical guessing unmetered.
+
+**Validation.** Frozen install PASS with an unchanged lockfile; `db:generate` PASS with no schema or
+migration change; format PASS; lint PASS with zero warnings; typecheck PASS across 12 tasks; unit tests
+PASS at 208 (config 26, Redis 4, database 17, worker 4, API 157 including 61 focused Stage 2.6, plus
+one Node toolchain test); build PASS across 8 tasks; `check` PASS; integration tests PASS at 275 (API
+203 including 32 focused Stage 2.6, Redis 37, database 35), none skipped, 3 migrations with 0 pending;
+smoke PASS at 22 assertions including 3 new startup-failure cases for the required secret; mobile check
+PASS; Android export PASS at 578 modules; `git diff --check` PASS. `pnpm audit --audit-level=high`
+**EXPECTED FAIL** on exactly node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm - no new
+finding, no suppression, threshold unchanged. Hosted CI was **not run**, because nothing is committed.
+
+**Escalation for owner decision.** No bound on simultaneous Argon2id verifications is enforced. The global
+budget caps Argon2id verifications **started**, not **simultaneous** 64 MiB allocations. A genuine
+concurrency cap requires leases with expiry and reviewed release semantics; a half-built distributed
+semaphore can deadlock or double-release, which is worse than an honest rate bound. This is the main gap
+Stage 2.6 leaves open. Separately, a TLS-terminating load balancer would collapse every client onto one
+source bucket, and no proxy-trust model has been
+decided. Both need owner decisions before public deployment, along with a production HMAC secret.
+
+**Superseded by the hardening review above.** The concurrency bound is now enforced by a deployment-wide
+leased semaphore, and the concurrent-bypass weakness is closed by reservation with refund. What remains for
+decision is the value of that bound, the newly hard Redis dependency, the proxy-trust model, and the
+production secret.
+
+**Unchanged.** Argon2id parameters, the password policy, recovery token entropy and expiry, token
+single-use, reset transaction atomicity, the shared advisory-lock protocol, credential fingerprint
+revalidation, exact trusted-origin validation, secure cookie settings, strict JSON validation, the 4
+KiB body limit, database isolation guards, and `no-store` on every authentication response. No schema,
+migration, dependency, lockfile, or CI change. No credentialed CORS, no registration, and no Stage 2.7
+`AuthenticationEvent` recording.
 
 ## CI reliability follow-up: documentation closure - 2026-10-09
 

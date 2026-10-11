@@ -16,6 +16,11 @@ import {
   type RecoveryInstructions,
 } from './password-recovery-delivery.js';
 import { lockUserSessionMutations } from './user-session-lock.js';
+import {
+  Argon2idAdmissionService,
+  Argon2idAdmissionRefused,
+  withArgon2idSlot,
+} from './argon2id-admission.service.js';
 
 /**
  * A fixed Argon2id digest with the production parameters, shared with the Stage 2.4 login path so
@@ -32,6 +37,19 @@ export interface RecoveryPolicySettings {
 }
 
 /**
+ * The minimal recipient record eligibility resolution returns.
+ *
+ * Deliberately the three fields delivery needs and nothing else: no `status`, no credential row, no
+ * normalised address. Returning a narrower shape than the query selects keeps it obvious that no
+ * additional account state is retained on this path.
+ */
+interface RecoveryRecipient {
+  readonly id: string;
+  readonly email: string;
+  readonly displayName: string;
+}
+
+/**
  * HTTP-agnostic password recovery for existing global users - Stage 2.5.
  *
  * Reuses the accepted Stage 2.2 Argon2id hasher and the accepted `PasswordResetToken` model. It adds
@@ -43,6 +61,14 @@ export class PasswordRecoveryService {
     private readonly database: PrismaClient,
     private readonly delivery: PasswordRecoveryDelivery,
     private readonly settings: RecoveryPolicySettings,
+    /**
+     * Deployment-wide Argon2id admission - Stage 2.6 hardening.
+     *
+     * Required rather than optional. `burnVerification` and `hashPassword` both allocate 64 MiB, and
+     * both are reachable here, so a service constructed without admission would serve unbounded
+     * simultaneous Argon2id work. Every such call below goes through it.
+     */
+    private readonly argon2id: Argon2idAdmissionService,
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
@@ -59,41 +85,19 @@ export class PasswordRecoveryService {
    * closed response the disabled mode uses, so it cannot become an oracle either.
    */
   async requestRecovery(email: unknown): Promise<void> {
+    // Stage 2.6 hardening. The eligibility decision is made first, because it decides whether any
+    // Argon2id happens at all; only the ineligible branches take a slot. A slot is not reserved for an
+    // eligible request, so a legitimate recovery never competes for verification capacity.
     const normalizedEmail = normalizeEmail(email);
-    if (normalizedEmail === null) {
-      // Not even a candidate address. Still pay the verification cost so a malformed address is not
-      // distinguishable from a well-formed unknown one by duration alone.
-      await this.burnVerification();
+    const resolved = await this.resolveEligibility(normalizedEmail);
+
+    if (!resolved.eligible) {
+      // Not a candidate address, unknown, disabled, or no credential. Each of these pays a real
+      // verification so none is distinguishable by duration alone.
+      await this.guarded(() => this.burnVerification());
       return;
     }
-
-    if (!deliveryAvailable(this.settings.mode)) {
-      // Fail closed before any write: no token, no row, no email attempt.
-      throw new AuthError('SERVICE_FAILURE');
-    }
-
-    const user = await this.database.user.findUnique({
-      where: { normalizedEmail },
-      select: profileFields,
-    });
-
-    if (user === null || user.status !== 'ACTIVE') {
-      await this.burnVerification();
-      return;
-    }
-
-    let eligible = false;
-    try {
-      // Presence of a credential is an eligibility condition, not an authentication one.
-      eligible =
-        (await this.database.passwordCredential.count({ where: { userId: user.id } })) === 1;
-    } catch {
-      throw new AuthError('SERVICE_FAILURE');
-    }
-    if (!eligible) {
-      await this.burnVerification();
-      return;
-    }
+    const { user } = resolved;
 
     const token = generateRecoveryToken();
     const tokenHash = hashRecoveryToken(token);
@@ -134,6 +138,46 @@ export class PasswordRecoveryService {
   }
 
   /**
+   * Decide whether this request can issue a token, without performing any Argon2id work.
+   *
+   * Returns `false` for a malformed address, an unknown address, a disabled account, and a missing
+   * credential - the four cases that must still cost a verification. Returns `false` immediately when
+   * delivery is disabled, because that path fails closed before any write and therefore must not spend
+   * a verification either.
+   */
+  private async resolveEligibility(
+    normalizedEmail: string | null,
+  ): Promise<{ eligible: false } | { eligible: true; user: RecoveryRecipient }> {
+    if (normalizedEmail === null) return { eligible: false };
+
+    if (!deliveryAvailable(this.settings.mode)) {
+      // Fail closed before any write and before any Argon2id: no token, no row, no email attempt.
+      throw new AuthError('SERVICE_FAILURE');
+    }
+
+    const user = await this.database.user.findUnique({
+      where: { normalizedEmail },
+      select: profileFields,
+    });
+
+    if (user === null || user.status !== 'ACTIVE') return { eligible: false };
+
+    try {
+      // Presence of a credential is an eligibility condition, not an authentication one.
+      const hasCredential =
+        (await this.database.passwordCredential.count({ where: { userId: user.id } })) === 1;
+      return hasCredential
+        ? {
+            eligible: true,
+            user: { id: user.id, email: user.email, displayName: user.displayName },
+          }
+        : { eligible: false };
+    } catch {
+      throw new AuthError('SERVICE_FAILURE');
+    }
+  }
+
+  /**
    * Redeem a recovery token and replace the password.
    *
    * Every unusable token - unknown, expired, consumed, superseded, or malformed - raises the same
@@ -151,10 +195,18 @@ export class PasswordRecoveryService {
 
     // Hash outside the transaction: the transaction must never hold a connection across a 64 MiB
     // allocation. Nothing is written yet, so losing the race after this point is harmless.
+    //
+    // Stage 2.6 hardening: the hash takes a deployment-wide Argon2id slot, so simultaneous resets
+    // cannot each allocate 64 MiB. The slot is released before the transaction opens, which preserves
+    // the accepted property that no connection is ever held across an allocation.
     let passwordHash: string;
     try {
-      passwordHash = await hashPassword(newPassword);
-    } catch {
+      passwordHash = await this.guarded(() => hashPassword(newPassword));
+    } catch (error) {
+      // An admission refusal is an operational outcome and must not be reported as a policy violation:
+      // the two are distinguishable to the client, and conflating them would both mislead the user and
+      // disclose that no hashing was attempted.
+      if (error instanceof AuthError) throw error;
       // The accepted hasher rejects a policy-invalid candidate. That is a safe validation error and
       // carries no account information. The token is left unconsumed so the user can retry.
       throw new AuthError('INVALID_PASSWORD');
@@ -257,6 +309,22 @@ export class PasswordRecoveryService {
       await verifyPassword('ineligible-recovery-placeholder', DECOY_PASSWORD_HASH);
     } catch {
       // Nothing to disclose and nothing to do.
+    }
+  }
+
+  /**
+   * Run Argon2id work while holding one deployment-wide slot.
+   *
+   * A refusal means the bound could not be honoured or could not be confirmed, so the work must not
+   * proceed. It surfaces as `SERVICE_FAILURE`, which is both sanitized and indistinguishable from any
+   * other operational failure - and it is raised before any allocation, so no work was half-done.
+   */
+  private async guarded<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await withArgon2idSlot(this.argon2id, work);
+    } catch (error) {
+      if (error instanceof Argon2idAdmissionRefused) throw new AuthError('SERVICE_FAILURE');
+      throw error;
     }
   }
 }

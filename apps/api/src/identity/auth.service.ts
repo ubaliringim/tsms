@@ -2,6 +2,11 @@ import type { PrismaClient } from '@tsms/database';
 import { PasswordCredentialService, fingerprintOf } from './password-credential.service.js';
 import { PasswordCredentialError } from './password-error.js';
 import { verifyPassword } from './password-hasher.js';
+import {
+  Argon2idAdmissionService,
+  Argon2idAdmissionRefused,
+  withArgon2idSlot,
+} from './argon2id-admission.service.js';
 import { SessionService } from './session.service.js';
 import { SessionError } from './session-error.js';
 import { lockUserSessionMutations } from './user-session-lock.js';
@@ -16,7 +21,15 @@ export type AuthErrorCode =
    */
   | 'RECOVERY_TOKEN_INVALID'
   /** The submitted new password violates the accepted Stage 2.2 policy. Stage 2.5. */
-  | 'INVALID_PASSWORD';
+  | 'INVALID_PASSWORD'
+  /**
+   * An abuse-protection meter refused the request. Stage 2.6.
+   *
+   * Raised only after enforcement succeeded and declined, never because enforcement was unavailable -
+   * an unconfirmable meter fails closed through `SERVICE_FAILURE` instead, so this code cannot be
+   * used to distinguish "you are limited" from "protection is down".
+   */
+  | 'RATE_LIMITED';
 
 /**
  * The only error this layer raises. HTTP translation lives in the exception filter, so the
@@ -90,6 +103,14 @@ export class AuthService {
     private readonly database: PrismaClient,
     private readonly credentials: PasswordCredentialService,
     private readonly sessions: SessionService,
+    /**
+     * Deployment-wide Argon2id admission - Stage 2.6 hardening.
+     *
+     * Required rather than optional: every verification on this path, including the decoy burn for an
+     * unknown address, allocates 64 MiB, so leaving it out would silently remove the bound on
+     * simultaneous verification. `login` is therefore the one place that cannot be served without it.
+     */
+    private readonly argon2id: Argon2idAdmissionService,
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
@@ -105,6 +126,27 @@ export class AuthService {
       throw new AuthError('INVALID_REQUEST');
     }
 
+    // One slot covers the whole verification, including the decoy path. Holding it across both would
+    // needlessly serialise a request that only ever does one of them.
+    try {
+      return await withArgon2idSlot(this.argon2id, () =>
+        this.verifyAndCreateSession(normalizedEmail, password),
+      );
+    } catch (error) {
+      // Stage 2.6 hardening. The deployment is at its simultaneous-verification bound, or the bound
+      // could not be confirmed. Either way no Argon2id is attempted and no session is created. The
+      // caller maps this to the same sanitized `503` as any other service failure, so it is
+      // indistinguishable from an infrastructure problem - which is what it is.
+      if (error instanceof Argon2idAdmissionRefused) throw new AuthError('SERVICE_FAILURE');
+      throw error;
+    }
+  }
+
+  /** The accepted Stage 2.4 and Stage 2.5 verification, now bracketed by one Argon2id slot. */
+  private async verifyAndCreateSession(
+    normalizedEmail: string,
+    password: string,
+  ): Promise<LoginResult> {
     const user = await this.database.user.findUnique({
       where: { normalizedEmail },
       select: { ...profileFields, status: true },

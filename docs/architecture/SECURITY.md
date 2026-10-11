@@ -85,6 +85,11 @@ any kind: there is still no tenant, school, membership, role, or permission conc
 - **Every authentication response is uncacheable**, including error responses.
 - **Credentialed CORS is not enabled.** No cross-origin response is exposed to a browser, so this
   stage's contract is same-origin only. Adding credentialed origins is a later explicit decision.
-- **There is no rate limiting.** Password verification is reachable over HTTP without throttling.
+- **Authentication rate limiting and Argon2id workload protection are implemented but not
+  deployment-validated.** Stage 2.6, plus a hardening review that closed a concurrent bypass and a missing
+  simultaneous-Argon2id bound, added Redis-backed distributed meters and a leased semaphore bounding
+  in-flight verification. Open: no proxy-trust model, no production HMAC secret chosen, untuned thresholds,
+  and Redis is now a hard dependency for login and both recovery endpoints. See
+  [RATE_LIMITING.md](../security/RATE_LIMITING.md).
   This is the known gap that makes Stage 2.4 unsuitable for direct public-internet exposure, and
   Stage 2.6 owns the fix.

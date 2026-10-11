@@ -14,7 +14,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test && node --test tests/toolchain.test.mjs",
-    "test:integration": "pnpm db:test:migrate && turbo run test:integration",
+    "test:integration": "pnpm db:test:migrate && turbo run test:integration --filter=@tsms/redis && turbo run test:integration --filter=!@tsms/redis",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",

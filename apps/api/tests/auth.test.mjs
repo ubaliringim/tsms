@@ -284,6 +284,10 @@ describe('trusted origin configuration', () => {
   const base = {
     DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/tsms',
     REDIS_URL: 'redis://:p@127.0.0.1:6379',
+    // Stage 2.6 requires the rate-limit key secret too. Supplying a valid one here keeps these
+    // cases about the origin allowlist: without it they would fail on the missing secret first
+    // and stop testing what they claim to test.
+    API_RATE_LIMIT_HMAC_SECRET: 'stage26_test_only_rate_limit_key_0123456789abcdef',
   };
 
   it('requires an allowlist in every environment including production', () => {

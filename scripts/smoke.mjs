@@ -29,12 +29,29 @@ const localInfrastructure = {
   // fall back to the documented loopback development origins.
   API_TRUSTED_ORIGINS:
     process.env.API_TRUSTED_ORIGINS ?? 'http://127.0.0.1:3000,http://127.0.0.1:3001',
+  // Stage 2.6 requires the rate-limit key secret in every environment, so the API cannot boot
+  // without it. This is a throwaway local value with the same lifecycle as the URLs above: prefer the
+  // exported one, fall back to a documented development secret.
+  API_RATE_LIMIT_HMAC_SECRET:
+    process.env.API_RATE_LIMIT_HMAC_SECRET ??
+    'tsms_local_development_rate_limit_key_replace_in_production',
 };
 // Asserts that these values are not echoed by any failure path.
 const infrastructureSecrets = [
   ...new Set(
-    [localInfrastructure.DATABASE_URL, localInfrastructure.REDIS_URL]
-      .map((url) => decodeURIComponent(new URL(url).password))
+    [
+      localInfrastructure.DATABASE_URL,
+      localInfrastructure.REDIS_URL,
+      localInfrastructure.API_RATE_LIMIT_HMAC_SECRET,
+    ]
+      .map((value) => {
+        try {
+          return decodeURIComponent(new URL(value).password);
+        } catch {
+          // The rate-limit secret is a bare token, not a URL.
+          return value;
+        }
+      })
       .filter(Boolean),
   ),
 ];
@@ -153,6 +170,16 @@ try {
   await rejectsMalformedInfrastructureUrl('api', 'REDIS_URL', 'not-a-valid-url');
   await rejectsMalformedInfrastructureUrl('worker', 'DATABASE_URL', 'not-a-valid-url');
   await rejectsMalformedInfrastructureUrl('worker', 'REDIS_URL', 'not-a-valid-url');
+  // Stage 2.6 rate-limit key secret: required in every environment, and rejected when too short or
+  // when it contains a character outside the accepted class. It is not an infrastructure URL, but it
+  // is required configuration that must fail startup rather than start unprotected.
+  await rejectsMissingInfrastructureUrl('api', 'API_RATE_LIMIT_HMAC_SECRET');
+  await rejectsMalformedInfrastructureUrl('api', 'API_RATE_LIMIT_HMAC_SECRET', 'tooshort');
+  await rejectsMalformedInfrastructureUrl(
+    'api',
+    'API_RATE_LIMIT_HMAC_SECRET',
+    `${'x'.repeat(32)}!`,
+  );
 
   const ports = {};
   for (const name of ['api', 'worker']) {

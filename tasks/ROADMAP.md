@@ -1,6 +1,6 @@
 # TSMS engineering roadmap
 
-These are controlled milestones, not promises of separate deployments. Each stage needs bounded tasks and explicit acceptance criteria before implementation. Stage 0 (Engineering Foundation) was accepted on 2026-10-07. Stage 1 (Database & Local Infrastructure) was accepted on 2026-10-07. Stage 2 (Authentication & Identity) Specification v1.0 is owner approved. Stage 2.1 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.2 is ACCEPTED / HOSTED VERIFIED / CLOSED. Implementation is authorized ONLY for Stage 2.3 (Secure Session Foundation). Stage 2 overall is not accepted. Stage 2.4 and later work are NOT STARTED / UNAUTHORIZED.
+These are controlled milestones, not promises of separate deployments. Each stage needs bounded tasks and explicit acceptance criteria before implementation. Stage 0 (Engineering Foundation) was accepted on 2026-10-07. Stage 1 (Database & Local Infrastructure) was accepted on 2026-10-07. Stage 2 (Authentication & Identity) Specification v1.0 is owner approved. Stages 2.1 through 2.5 are ACCEPTED / HOSTED VERIFIED / CLOSED. Implementation is authorized ONLY for Stage 2.6 (Rate Limiting & Abuse Protection), which is LOCALLY VALIDATED / AWAITING OWNER REVIEW. Stage 2 overall is not accepted. Stage 2.7 and later work are NOT STARTED / UNAUTHORIZED.
 
 | Stage | Scope                             |
 | ----- | --------------------------------- |
