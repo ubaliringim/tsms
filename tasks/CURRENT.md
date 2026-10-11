@@ -1,13 +1,119 @@
-# Current task: Stage 2.6 - Rate Limiting and Abuse Protection (HARDENING REVIEW APPLIED)
+# Current task: Stage 2.6 - Rate Limiting and Abuse Protection (CLOSED)
 
 Owner: TeamStack Technologies LTD
 
-Stage 0 and Stage 1: ACCEPTED. Stages 2.1, 2.2, 2.3, 2.4 and 2.5: ACCEPTED / HOSTED VERIFIED /
-CLOSED.
-**Stage 2.6: LOCALLY VALIDATED / AWAITING OWNER REVIEW.**
-Stage 2 overall: NOT ACCEPTED. Stage 2.7 and later: NOT STARTED / UNAUTHORIZED.
+Stage 0 and Stage 1: ACCEPTED. Stages 2.1 through 2.6: ACCEPTED / HOSTED VERIFIED / CLOSED.
+Stage 2 overall: NOT ACCEPTED. Stage 2.7 - Security Events & Sanitization: NOT STARTED / UNAUTHORIZED.
+Production deployment: PROHIBITED.
 
-## Starting state
+**Stage 2.6 is closed.** The next planned stage is Stage 2.7 - Security Events & Sanitization. It has not
+been started and is not authorized; nothing in this document authorizes beginning it.
+
+## Closure record
+
+Implementation commit `ca66284fb479a00a2c235ae6e18fa3ec7929b98e`
+(`feat: add distributed authentication abuse protection`).
+
+Hosted verification run `38123962717` of the `Stage 1 validation` workflow:
+<https://github.com/ubaliringim/tsms/actions/runs/38123962717>
+
+| Item                 | Hosted result                                               |
+| -------------------- | ----------------------------------------------------------- |
+| `validate` job       | **success**                                                 |
+| `security-audit` job | **failure - expected**, exactly the two accepted advisories |
+| Overall workflow     | **RED - not green**                                         |
+
+The counts below were read from the hosted run log, not inferred from the local run.
+
+| Measure                  | Hosted value                                                               |
+| ------------------------ | -------------------------------------------------------------------------- |
+| Unit and toolchain tests | 245 (config 37, redis 4, database 17, worker 4, api 182, node toolchain 1) |
+| Integration tests        | 340 (redis 66, database 35, api 239)                                       |
+| Smoke assertions         | 22                                                                         |
+| Migrations               | 3 applied, 0 pending                                                       |
+| Mobile export            | Android bundled, 578 modules                                               |
+| Unexpected failures      | none                                                                       |
+
+**The overall workflow remains red and is not reported as green.** It is red solely because `security-audit`
+fails on the two already accepted advisories, which the owner has directed must not be suppressed,
+downgraded, or marked fixed. The `validate` gate - install, generation, check, integration, mobile, and
+smoke - passed.
+
+## What was delivered
+
+- **Atomic multi-dimensional Redis rate limiting.** One Lua script evaluates every dimension of a request
+  as a token bucket inside a single indivisible step, so a request is admitted only when every dimension has
+  capacity and nothing is written unless every dimension admits. Time comes from Redis `TIME`, never the
+  caller, so all instances refill identically despite local clock skew.
+- **Reservation and refund.** Admission reserves a token on every metered dimension and the reservation is
+  refunded unless the outcome was a credential failure. `AUTHENTICATION_FAILED` and `RECOVERY_TOKEN_INVALID`
+  keep the charge; every other outcome refunds it; the global workload budget is never refunded. The refund
+  recomputes refill from Redis time and clamps to capacity. It is never an unconditional `INCR`, it cannot
+  resurrect an expired key, and it cannot mint budget.
+- **Distributed Argon2id semaphore.** At most **8 valid leases** exist across the whole deployment at one
+  time, shared by every API instance, enforced immediately before every 64 MiB allocation: login
+  verification, login decoy verification, recovery decoy verification, and reset credential hashing.
+  Lease 30 s, renewal every 10 s, holder ids are 32 random bytes and never derived from client input.
+  Admission is refused immediately, never queued, and never falls back to unlimited admission on Redis
+  failure.
+- **Trusted transport-peer identity.** The transport peer is the only trusted client identity. `trust proxy`
+  remains disabled and not configurable.
+- **Fail-closed authentication.** When Redis is unreachable, login, forgot, and reset are refused before any
+  Argon2id is attempted and no recovery token is issued. `/auth/me` and logout remain available, and logout
+  still revokes through PostgreSQL.
+- **Privacy-preserving keys.** Every key is a 32-character HMAC-SHA256 digest in the `{tsms-rl}` namespace. No
+  raw credential, address, or Argon2id hash ever reaches Redis.
+
+## Preserved historical evidence
+
+An owner-commissioned review found that the original failure-metered design was a **real concurrent
+bypass**, not the "bounded by in-flight concurrency" limitation it had been documented as. Admission was a
+check that wrote nothing, with the charge applied after the handler returned, so the two were not atomic.
+
+Demonstrated against real Redis before the fix and preserved in
+`apps/api/tests/rate-limit-concurrency.integration.test.mjs`:
+
+| Case                                    | Allowance | Observed before the fix |
+| --------------------------------------- | --------- | ----------------------- |
+| 20 concurrent failed logins             | 8         | 20 admitted, 0 refused  |
+| 20 concurrent invalid resets            | 10        | 20 admitted, 0 refused  |
+| The same burst across two API instances | 8         | 20 admitted             |
+
+Sequential traffic correctly refused at the limit, which proved the bypass was concurrency-specific and
+distributed. After the fix the same probe admits exactly the allowance.
+
+A negative control confirmed the refund clamp is genuinely tested: removing the ceiling made buckets inflate
+to 8 and 12 tokens against a capacity of 5. The source was restored and re-verified clean.
+
+## Remaining unresolved risks
+
+These are **not** resolved by this closure, and none of them may be treated as accepted for production use:
+
+- **Lease-expiry over-admission.** A lease that expires while its work is still running permits
+  over-admission, bounded by the number of such holders rather than by request volume. The semaphore bounds
+  valid leases; it is **not** an unconditional maximum of 8 physically running Argon2id operations.
+- **Redis is now a hard dependency** for login, password recovery, and password reset. Redis unavailability
+  makes those endpoints unavailable.
+- **Lost refunds.** A refund that cannot be written is lost rather than queued or retried, which can
+  under-charge a subject.
+- **No approved trusted proxy model.** A TLS-terminating shared proxy collapses every client onto one
+  transport peer and therefore one source bucket. **Production use behind such a proxy is blocked** pending an
+  architecture review.
+- **HMAC secret provisioning and rotation.** A per-instance value produces disjoint key spaces and silently
+  turns a distributed limit into a per-instance one. Rotation resets every active window and fails open for
+  up to one window. No production secret is committed.
+- **Provisional thresholds.** Development rate-limit thresholds are provisional; production tuning is
+  deferred.
+- **Redis Cluster untested.** The hash tag keeps every multi-key script in one slot, but no Cluster instance
+  has been exercised.
+- **Production email delivery is not configured.** Password recovery still runs in its non-delivering mode.
+
+**Both dependency advisories remain OPEN and unresolved:** `node-forge` `GHSA-86w9-cpqp-85rv` and `braces`
+`GHSA-vfj7-8cjw-p6xm`. Acceptance of this stage resolves neither.
+
+**This stage is not production readiness. Production deployment remains prohibited.**
+
+## Historical authorization record
 
 Work started on main at `fd2a58ef30a8f3b32c2c6a587e4e4f93726143a2`
 (`docs: close Prisma generation race follow-up`), matching origin/main with a clean working tree. The
@@ -20,6 +126,12 @@ history is preserved in `project-state.json` under `resolvedFollowUps` and in
 The owner authorized investigation, design, implementation, testing, and documentation of **Stage 2.6
 only**, with an explicit instruction not to commit, push, or deploy. Nothing has been committed, nothing
 has been pushed, and no deployment occurred.
+
+**Superseding authorization.** The owner later accepted the local hardening in principle and separately
+authorized a final safety review, narrowly necessary Stage 2.6 corrections, and a commit and push of the
+implementation for hosted CI verification. That authorization covers the implementation commit
+`ca66284` only. It does **not** authorize closing Stage 2.6 documentation, deploying, or beginning
+Stage 2.7, and it explicitly forbids amending, force-pushing, or suppressing the two accepted advisories.
 
 ## Contract
 
@@ -448,10 +560,11 @@ platform follow-up is preserved unchanged, as is the resolved Prisma generation 
 
 ## Git status
 
-Branch `main` at baseline `fd2a58ef30a8f3b32c2c6a587e4e4f93726143a2`, matching origin/main. Nothing
-staged, nothing committed, nothing pushed, no deployment. Recommended commit subject for owner use:
-`feat: add distributed authentication abuse protection`. **It has not been created.**
+Branch `main`. Stage 2.6 implementation was committed as
+`ca66284fb479a00a2c235ae6e18fa3ec7929b98e` and pushed to origin/main, and was verified by hosted run
+`38123962717`. Closure is recorded by this documentation-only commit. No implementation change, no amend, no
+force-push, and **no deployment** has occurred at any point.
 
-Exact next action: owner review.
+Exact next action: await separate owner authorization for **Stage 2.7 - Security Events & Sanitization**.
 
-**HARD STOP: no commit, no push, no deployment, and no Stage 2.7 without explicit owner authorization.**
+**HARD STOP: no deployment, and no Stage 2.7 without explicit owner authorization.**

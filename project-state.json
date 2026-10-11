@@ -2,11 +2,11 @@
   "project": "TSMS",
   "fullName": "TeamStack School Management System",
   "company": "TeamStack Technologies LTD",
-  "updatedAt": "2026-10-09",
+  "updatedAt": "2026-10-11",
   "phase": "foundation",
   "stage": "2.6",
   "stageName": "Rate Limiting & Abuse Protection",
-  "stageStatus": "locally_validated_awaiting_owner_review",
+  "stageStatus": "accepted_hosted_verified_closed",
   "implementationAuthorized": true,
   "previousStage": {
     "stage": "1",
@@ -15,22 +15,22 @@
     "acceptedAt": "2026-10-07",
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
-  "task": "2.5",
+  "task": "2.6",
   "status": "accepted_hosted_verified_closed",
   "reviewStatus": "complete",
   "nextTask": {
-    "id": "2.6",
-    "name": "Rate limiting and abuse protection",
-    "status": "locally_validated_awaiting_owner_review",
-    "implementationAuthorized": true,
+    "id": "2.7",
+    "name": "Security Events & Sanitization",
+    "status": "not_started_unauthorized",
+    "implementationAuthorized": false,
     "accepted": false,
     "hostedVerified": false,
-    "record": "docs/security/RATE_LIMITING.md",
-    "nextAction": "Owner review of the locally validated Stage 2.6 implementation. Nothing is committed or pushed."
+    "record": null,
+    "nextAction": "Await separate owner authorization. Stage 2.7 has NOT been started and must not be started under the Stage 2.6 closure."
   },
   "nextPlannedStage": {
-    "stage": "3",
-    "name": "Multi-Tenancy",
+    "stage": "2.7",
+    "name": "Security Events & Sanitization",
     "implementationAuthorized": false
   },
   "blocked": false,
@@ -1664,16 +1664,54 @@
     }
   ],
   "stage26": {
-    "status": "locally_validated_awaiting_owner_review",
-    "accepted": false,
-    "hostedVerified": false,
+    "status": "accepted_hosted_verified_closed",
+    "accepted": true,
+    "hostedVerified": true,
+    "acceptedAt": "2026-10-11",
+    "closedAt": "2026-10-11",
     "authorization": {
       "stage": "2.6",
       "scope": "Rate limiting and abuse protection for the accepted authentication surface",
       "authorizedBy": "TeamStack Technologies LTD",
       "explicitAuthorization": "Owner authorization for Stage 2.6 ONLY",
       "laterSubstagesAuthorized": false,
-      "commitPushOrDeployAuthorized": false
+      "commitPushOrDeployAuthorized": true,
+      "authorizationNote": "Initial authorization prohibited commit, push, and deploy. The owner later accepted the local hardening in principle, authorized a final safety review plus narrowly necessary Stage 2.6 corrections, authorized the implementation commit and push for hosted verification, and finally authorized this documentation-only closure commit and push. Deployment was never authorized and has never occurred.",
+      "documentationClosureAuthorized": true,
+      "deploymentAuthorized": false
+    },
+    "implementationCommit": "ca66284fb479a00a2c235ae6e18fa3ec7929b98e",
+    "hostedVerification": {
+      "runId": 38123962717,
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/38123962717",
+      "workflow": "Stage 1 validation",
+      "headSha": "ca66284fb479a00a2c235ae6e18fa3ec7929b98e",
+      "validateJob": "success",
+      "securityAuditJob": "failure",
+      "overallConclusion": "failure",
+      "overallIsGreen": false,
+      "overallNote": "The overall workflow is RED and is not reported as green. It is red solely because security-audit fails on exactly the two already accepted, unresolved advisories, which the owner has instructed must not be suppressed, downgraded, or marked fixed. The validate gate, which covers install, generation, check, integration, mobile, and smoke, passed.",
+      "countsConfirmedFromHostedLog": true,
+      "unitTests": 245,
+      "unitBreakdown": {
+        "config": 37,
+        "redis": 4,
+        "database": 17,
+        "worker": 4,
+        "api": 182,
+        "nodeToolchain": 1
+      },
+      "integrationTests": 340,
+      "integrationBreakdown": {
+        "redis": 66,
+        "database": 35,
+        "api": 239
+      },
+      "smokeAssertions": 22,
+      "migrationsApplied": 3,
+      "migrationsPending": 0,
+      "mobileExportModules": 578,
+      "unexpectedFailures": 0
     },
     "contract": "docs/security/RATE_LIMITING.md",
     "endpoints": [
@@ -1687,16 +1725,19 @@
     "schemaNote": "No schema or migration change. Rate-limit state is Redis-only and keys are derived, never stored.",
     "files": [
       "packages/redis/src/rate-limit.ts",
+      "packages/redis/src/argon2id-semaphore.ts",
       "packages/redis/src/index.ts",
       "packages/config/src/env.ts",
       "apps/api/src/identity/client-identity.ts",
       "apps/api/src/identity/auth-abuse-policy.ts",
       "apps/api/src/identity/abuse-protection.service.ts",
       "apps/api/src/identity/auth-abuse.guard.ts",
-      "apps/api/src/identity/abuse-failure-charge.interceptor.ts",
+      "apps/api/src/identity/abuse-reservation.interceptor.ts",
+      "apps/api/src/identity/argon2id-admission.service.ts",
       "apps/api/src/identity/auth.controller.ts",
       "apps/api/src/identity/auth.module.ts",
       "apps/api/src/identity/auth.service.ts",
+      "apps/api/src/identity/password-recovery.service.ts",
       "apps/api/src/identity/auth-exception.filter.ts",
       "docs/security/RATE_LIMITING.md"
     ],
@@ -1714,32 +1755,63 @@
       }
     },
     "algorithm": {
-      "kind": "atomic multi-dimensional Redis Lua token bucket",
+      "kind": "atomic multi-dimensional Redis token bucket with reservation and refund",
       "location": "packages/redis/src/rate-limit.ts",
       "scriptInvokedVia": "ioredis EVAL",
       "allOrNothing": "A request is admitted only when every dimension has capacity, and nothing is written unless every dimension admits.",
-      "commitAndCheck": "A dimension marked commit:false is evaluated and contributes to the decision and retry calculation, but nothing is written. This separates pre-flight admission from the post-hoc charge for a failed attempt.",
+      "commitAndCheckSuperseded": "The pre-hardening design used commit:false on the failure-metered dimensions so that admission wrote nothing and the charge happened after the handler returned. That is retained here as history and was found to be a real concurrent bypass; see concurrentBypassFinding.",
+      "reservationAndRefund": "The committed design reserves a token on every metered dimension at admission, inside the same indivisible script as the check, and refunds it afterwards unless the outcome was a credential failure. AUTHENTICATION_FAILED and RECOVERY_TOKEN_INVALID keep the reservation; every other outcome refunds it. The global workload budget is never refunded.",
       "timeSource": "Redis TIME, never the caller, so all instances refill identically regardless of local clock skew.",
       "noIncrThenExpireRace": "The script that creates a key also sets its expiry, so no crash can leave a key without a TTL.",
       "keySlot": "Every key carries the {tsms-rl} hash tag, keeping a multi-key script inside one cluster slot.",
+      "refundIsNotIncr": "The refund script recomputes refill from Redis TIME and clamps to capacity. It is never an unconditional INCR, it cannot resurrect an expired key, and it cannot mint budget.",
       "integerRefillArithmetic": true,
       "clockJumpBoundedByWindow": true,
       "counterOverflowBoundedByValidatedCapacity": true
     },
     "guaranteesClaimed": [
-      "Concurrent requests cannot exceed the configured allowance: the check and the write are one indivisible script step.",
-      "No partial writes: a refused request charges no dimension.",
+      "Concurrent requests cannot exceed the configured allowance: the reservation check and the write are one indivisible script step.",
+      "No partial writes: a refused request reserves nothing on any dimension.",
+      "A legitimate success is refunded, so a valid attempt costs no observable budget.",
+      "A failed credential attempt keeps its charge.",
+      "Refunds are clamped to capacity and saturating, so duplicate or repeated refunds cannot inflate a bucket.",
+      "A refund cannot restore another subject's budget, because keys are HMAC-derived and never caller-selectable.",
       "A key expires after exactly its window, which is also its time to refill to capacity.",
       "Key cardinality is bounded by distinct subjects within one window.",
       "All state is in Redis, so enforcement is total across API instances."
     ],
     "guaranteesNotClaimed": [
-      "A concurrent burst of failures can overshoot the credential meters; overshoot is bounded by in-flight concurrency, not request volume, and never past one window.",
       "No strict fairness between dimensions.",
-      "No bound on simultaneous Argon2id verifications; the global budget caps work started, not work in flight.",
+      "A refund that cannot be written is lost rather than queued or retried, which can under-charge a subject.",
       "Redis Cluster is designed for via the hash tag but was not exercised against a Cluster instance.",
       "No strict constant-time behaviour."
     ],
+    "concurrentBypassFinding": {
+      "status": "found_during_hardening_review_and_fixed",
+      "preserved": true,
+      "defect": "Admission for the failure-metered dimensions was a check that wrote nothing, with the charge applied after the handler returned. Because those two steps were not atomic, N simultaneous requests all read the same untouched bucket and were all admitted.",
+      "demonstration": "Written against real Redis before the fix, and retained in apps/api/tests/rate-limit-concurrency.integration.test.mjs: 20 concurrent failed logins were all admitted against an allowance of 8; 20 concurrent invalid resets were all admitted against an allowance of 10; the same burst split across two API instances was all admitted.",
+      "sequentialControl": "Sequential traffic correctly refused at the limit, proving the bypass was concurrency-specific and distributed rather than a broken policy.",
+      "regressionTest": "apps/api/tests/rate-limit-concurrency.integration.test.mjs preserves the before evidence and asserts the corrected behaviour of admitting exactly the allowance."
+    },
+    "argon2idSemaphore": {
+      "status": "implemented",
+      "location": "packages/redis/src/argon2id-semaphore.ts",
+      "kind": "deployment-wide leased Redis sorted-set semaphore",
+      "validLeases": 8,
+      "leaseMillis": 30000,
+      "renewEveryMillis": 10000,
+      "holderIdentity": "43-character base64url value from 32 random bytes, never derived from a credential, address, or token",
+      "coveredWork": [
+        "login credential verification",
+        "login decoy verification for an unknown account",
+        "password-recovery decoy verification for an ineligible request",
+        "password-reset credential hashing"
+      ],
+      "guarantee": "At most 8 valid leases may exist across the whole deployment at one time, and every Argon2id allocation is bracketed by a lease.",
+      "guaranteeNotClaimed": "This is NOT an unconditional maximum of 8 physically running Argon2id operations. A lease that expires while its work is still running permits over-admission, bounded by the number of such holders rather than by request volume.",
+      "refusal": "Immediate, with no queue and no unlimited fallback. Redis unavailability refuses admission."
+    },
     "policies": {
       "source": {
         "login": "10 per 5 minutes",
@@ -2058,7 +2130,7 @@
           ],
           "admissionServiceRequired": true,
           "admissionServiceRequiredWhy": "Both AuthService and PasswordRecoveryService take it as a required constructor argument rather than an optional one, because omitting it would silently remove the bound.",
-          "postFixBehaviour": "At most 8 simultaneous Argon2id operations across the whole deployment, shared by every API instance, verified with independently created applications and three separate Redis connections.",
+          "postFixBehaviour": "At most 8 valid leases exist across the whole deployment at one time, shared by every API instance, verified with independently created applications and three separate Redis connections. This is a bound on valid leases, not an unconditional maximum of 8 physically running Argon2id operations: a lease that expires while its work is still running permits over-admission, bounded by the number of such holders rather than by request volume.",
           "sizingRationale": "8 concurrent operations is 512 MiB of transient allocation fleet-wide, roughly 80 verifications per second against a measured ~100 ms verification. The bound must sit above the legitimate concurrency of the product: the accepted Stage 2.5 contract includes six concurrent valid logins all being admitted, and its suite exercises six at once.",
           "residualGap": "A lease that expires while its work is still running permits bounded over-admission. The lease is 30 s against a ~100 ms operation with renewal every 10 s, so it requires an event-loop-starved process or a pathologically slow machine."
         }
@@ -2073,7 +2145,7 @@
         "holderIdentity": "32 random bytes, base64url, never derived from a credential, address, or token",
         "queueing": "none; admission is refused immediately rather than waited on",
         "guarantees": [
-          "At most the configured number of Argon2id operations hold a slot across the whole deployment.",
+          "At most the configured number of valid leases exist across the whole deployment, and every Argon2id allocation is bracketed by a lease.",
           "Acquisition is atomic, so concurrent acquires cannot exceed capacity.",
           "A crashed, killed, or disconnected holder frees its slot when its lease expires; capacity never leaks permanently.",
           "A release cannot free another holder slot, and a duplicate release cannot free two.",
@@ -2174,17 +2246,63 @@
         "formatCheck": "PASS",
         "lint": "PASS; zero warnings",
         "typecheck": "PASS; 12 tasks",
-        "test": "PASS; 233 unit/toolchain tests (config 37, Redis 4, database 17, worker 4, API 182 including 61 rate-limit and 24 hardening cases, plus one Node toolchain test)",
+        "test": "PASS; 245 unit/toolchain tests (config 37, Redis 4, database 17, worker 4, API 182 including the rate-limit and hardening cases, plus one Node toolchain test)",
         "build": "PASS; 8 build tasks",
         "check": "PASS",
-        "integrationTests": "PASS; 326 cases (API 239 including 6 concurrency-probe and 30 hardening cases, Redis 52 including 15 semaphore cases, database 35), none skipped; 3 migrations, 0 pending",
+        "integrationTests": "PASS; 340 cases (API 239 including 6 concurrency-probe and 30 hardening cases, Redis 66 including 15 semaphore and 14 refund-audit cases, database 35), none skipped; 3 migrations, 0 pending",
         "smoke": "PASS; 22 assertions",
         "mobileCompatibility": "PASS",
         "mobileExport": "PASS; Android 578 modules",
         "diffCheck": "PASS",
         "dependencyAudit": "EXPECTED FAIL, exactly two accepted high advisories (node-forge GHSA-86w9-cpqp-85rv, braces GHSA-vfj7-8cjw-p6xm). No new finding, no suppression, threshold unchanged.",
-        "hostedCI": "NOT RUN. No commit and no push authorized.",
+        "hostedCI": "Run 38123962717 on ca66284. validate = success; security-audit = expected failure on the two accepted advisories; overall workflow = RED. See stage26.hostedVerification.",
         "flakyBuildObservation": "One pnpm test invocation failed in the Next.js control build because /_global-error took over 60 seconds and was retried. It passed on the following invocation and is unrelated to this stage; no Stage 2.6 file is involved in that build."
+      },
+      "finalSafetyReview": {
+        "date": "2026-10-11",
+        "authorizedBy": "TeamStack Technologies LTD",
+        "scope": "Documentation-independent final safety review of the reservation/refund path and the Argon2id semaphore, plus narrowly necessary Stage 2.6 corrections.",
+        "implementationChangedByThisReview": false,
+        "correctionsMade": [
+          "Test-only: an invalid key shape in the new refund-audit suite, an unused helper, and an assertion that could have passed vacuously. No production code was changed."
+        ],
+        "refundAuditProvedAgainstRealRedis": [
+          "Admission reserves atomically across every dimension and a refusal writes nothing, verified through a second dimension that is still untouched.",
+          "A 40-way concurrent burst admits exactly the capacity.",
+          "A legitimate success is refunded exactly one token and a failed credential attempt keeps its charge.",
+          "Refunds recompute refill from Redis TIME and clamp to capacity, so repeated refunds cannot inflate a bucket.",
+          "A duplicate refund cannot restore capacity twice, because the second refund saturates at capacity.",
+          "A refund cannot restore another subject budget, because keys are HMAC-derived and never caller-selectable.",
+          "A delayed refund cannot disturb a different window generation of the same key.",
+          "A refund after expiry does not resurrect the expired key.",
+          "A Redis failure during refund resolves without throwing and is never retried.",
+          "A malformed dimension is refused before the script is issued.",
+          "Keys are fixed-shape 32-character hex digests, so no raw credential, address, or Argon2id hash reaches Redis."
+        ],
+        "negativeControlAdded": {
+          "control": "The refund clamp",
+          "method": "Removed the ceiling clamp from the refund script and re-ran the refund-audit suite.",
+          "result": "Three cases failed, with buckets inflating to 8 and 12 tokens against a capacity of 5. The source was then restored and re-verified clean, and the full Redis integration suite was green on re-run twice."
+        },
+        "semaphoreAuditFindings": [
+          "Capacity of 8 valid leases, 30 s lease, 10 s renewal confirmed against the committed code.",
+          "Acquisition is atomic; holder ids are 43-character base64url values from 32 random bytes and are never derived from a credential, address, or token.",
+          "Renewal and release are both guarded by a presence check, so a delayed, duplicate, or forged release cannot free another holder's lease and a renewal cannot revive a released slot.",
+          "A crashed holder is reclaimed by the expiry prune rather than leaking capacity permanently.",
+          "All four Argon2id allocation sites are bracketed: login verification, login decoy verification, recovery decoy verification, and reset credential hashing.",
+          "Redis unavailability refuses admission with no unlimited fallback."
+        ],
+        "noSevereFlawFound": true,
+        "noStopRequired": true
+      },
+      "closure": {
+        "status": "accepted_hosted_verified_closed",
+        "acceptedAt": "2026-10-11",
+        "documentationCommit": null,
+        "documentationCommitNote": "Set by the documentation-only closure commit.",
+        "deploymentPerformed": false,
+        "productionReady": false,
+        "productionReadinessNote": "Acceptance of this stage is not production readiness. Production deployment remains prohibited, and the Stage 2.6 limitations below are unresolved."
       },
       "preservedByHardening": {
         "argon2idParameters": true,
@@ -2208,11 +2326,25 @@
         "accountLockoutColumnsIntroduced": false,
         "authenticationEventRecordingIntroduced": false
       },
-      "stillRequiresOwnerDecision": [
-        "Accept the Argon2id concurrency bound of 8, or direct a different value with its memory implications.",
-        "Accept that Redis is now a hard dependency for login and both recovery endpoints.",
-        "Decide the load-balancer proxy-trust model; a TLS-terminating shared proxy collapses all clients onto one source bucket.",
-        "Accept the rate-limit key secret as a shared, injected, never-committed deployment value, with the rotation behaviour documented."
+      "stillRequiresOwnerDecision": [],
+      "ownerDecisionsRecorded": [
+        "Provisional Argon2id semaphore capacity of 8 is accepted.",
+        "Redis is accepted as a hard dependency for login and password recovery.",
+        "Transport-peer identity remains the authoritative client identity source.",
+        "No trusted proxy model is approved.",
+        "Production use behind a shared TLS-terminating proxy remains blocked pending architecture review.",
+        "API_RATE_LIMIT_HMAC_SECRET must be securely injected and shared by every replica.",
+        "Development thresholds remain provisional and production tuning is deferred."
+      ],
+      "remainingLimitations": [
+        "Lease-expiry over-admission: a lease that expires while its work is still running permits over-admission, bounded by the number of such holders rather than by request volume. The semaphore bounds valid leases, not physically running Argon2id operations.",
+        "Redis unavailability makes login, password recovery, and password reset unavailable, because neither the rate limit nor the concurrency bound can be confirmed.",
+        "A refund that cannot be written is lost rather than queued or retried, which can under-charge a subject.",
+        "No approved trusted proxy model. Transport-peer identity collapses every client behind a shared TLS-terminating proxy onto one source bucket, which is a production blocker pending architecture review.",
+        "HMAC secret provisioning and rotation: a per-instance value produces disjoint key spaces and silently turns a distributed limit into a per-instance one, and rotation resets every active window and fails open for up to one window.",
+        "Development rate-limit thresholds are provisional; production tuning is deferred.",
+        "Redis Cluster is designed for via the hash tag but has not been exercised against a Cluster instance.",
+        "Production email delivery is not configured; password recovery still runs in its non-delivering mode."
       ],
       "testIsolationFix": {
         "problem": "Three consecutive full-suite runs exposed intermittent failures in the Stage 2.6 hardening suites. The cause was cross-suite interference over state that is deployment-wide by design, not a defect in either control.",

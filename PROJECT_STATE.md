@@ -16,7 +16,8 @@ Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Next substage: 2.6 - Rate limiting and abuse protection. NOT STARTED / UNAUTHORIZED.
+Next substage: **2.7 - Security Events & Sanitization.** NOT STARTED / UNAUTHORIZED. Stage 2.6 is now
+ACCEPTED / HOSTED VERIFIED / CLOSED.
 
 Accepted capabilities: PostgreSQL local infrastructure, Redis local infrastructure, pgvector extension foundation, Prisma 7 database foundation, packages/database, packages/redis, migration workflow, database and Redis lifecycle handling, API and worker liveness/readiness separation, integration-test infrastructure, test-database safety controls, Docker Compose workflow, fresh-state reproducibility, the Stage 1 CI workflow, the three Prisma dependency security remediations, the temporary InfrastructureProbe scaffolding, and the smoke-test readiness extensions. The Stage 1 known issues were reviewed and accepted as non-blocking.
 
@@ -44,13 +45,13 @@ Stage 2.4 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-0
 
 Stage 2.5 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Implementation commit `e2bb3b79aa774b64e155b273b35af6dd17a47242` (`feat: add secure password recovery`); hosted run [37859811782](https://github.com/ubaliringim/tsms/actions/runs/37859811782). Record at tasks/CURRENT.md and docs/security/PASSWORD_RECOVERY.md.
 
-Stage 2.6 status: LOCALLY VALIDATED / AWAITING OWNER REVIEW. Distributed abuse protection is implemented and passes full local validation. **Not accepted, not hosted verified, not committed, not pushed, not deployed.** Record at tasks/CURRENT.md and docs/security/RATE_LIMITING.md.
+Stage 2.6 status: **ACCEPTED / HOSTED VERIFIED / CLOSED** (owner decision, 2026-10-11). Implementation commit `ca66284fb479a00a2c235ae6e18fa3ec7929b98e` (`feat: add distributed authentication abuse protection`); hosted run [38123962717](https://github.com/ubaliringim/tsms/actions/runs/38123962717): `validate` = **success** (245 unit/toolchain tests, 340 integration tests, 22 smoke assertions, 3 migrations applied with 0 pending, Android export of 578 modules, no unexpected failures), `security-audit` = **expected failure on exactly the two accepted advisories**, overall workflow = **RED and not reported as green**. **Not deployed.** Record at tasks/CURRENT.md and docs/security/RATE_LIMITING.md.
 
-Stage 2 overall: NOT ACCEPTED. Stage 2.7 and later: NOT STARTED / UNAUTHORIZED.
+Stage 2 overall: NOT ACCEPTED. Stage 2.7 - Security Events & Sanitization: NOT STARTED / UNAUTHORIZED.
 
-Exact next action: owner reviews the Stage 2.6 implementation and decides on the escalation recorded below - in particular whether to accept a global Argon2id **rate** budget with no bound on **simultaneous** verifications, and how a load balancer should influence client identity. Nothing may be committed or deployed without explicit authorization.
+Exact next action: await separate owner authorization for Stage 2.7 - Security Events & Sanitization. Nothing may be deployed or started without explicit authorization. The Stage 2.6 limitations recorded below remain open; acceptance of the stage is not production readiness.
 
-DO NOT: start Stage 2.7 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken audits, amend, force-push, commit, push, or deploy without explicit authorization.
+DO NOT: start Stage 2.7 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken or suppress audits, amend, force-push, or deploy without explicit authorization.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -499,16 +500,19 @@ recorded as fixed, locally validated, and hosted verified, and stays open pendin
 decision.
 
 Stage 2.5 remains ACCEPTED / HOSTED VERIFIED / CLOSED and its closure history is unchanged. Stage 2
-overall remains NOT ACCEPTED. Stage 2.6 remains NOT STARTED / UNAUTHORIZED.
+overall remains NOT ACCEPTED. Stage 2.6 is ACCEPTED / HOSTED VERIFIED / CLOSED.
+Stage 2.7 - Security Events & Sanitization remains NOT STARTED / UNAUTHORIZED.
 
 ## Stage 2.6 - Rate limiting and abuse protection - 2026-10-09
 
-**Status: LOCALLY VALIDATED / AWAITING OWNER REVIEW.** Not accepted, not hosted verified, not
-committed, not pushed, not deployed. Hardened after an owner-commissioned review closed two real weaknesses.
+**Status: ACCEPTED / HOSTED VERIFIED / CLOSED** (owner decision, 2026-10-11). **Not deployed.** Hardened
+after an owner-commissioned review closed two real weaknesses, committed and pushed as
+`ca66284fb479a00a2c235ae6e18fa3ec7929b98e`, and verified by hosted run
+[38123962717](https://github.com/ubaliringim/tsms/actions/runs/38123962717).
 
 All five authentication routes are now protected by Redis-backed distributed meters that share state
-across API instances, and **all Argon2id work is bounded both by rate and by a deployment-wide
-concurrency bound**. The design, policies, key construction, outage behaviour, and residual risks are
+across API instances, and **all Argon2id work is bounded both by rate and by a deployment-wide bound of
+8 valid leases**. The design, policies, key construction, outage behaviour, and residual risks are
 specified in [docs/security/RATE_LIMITING.md](docs/security/RATE_LIMITING.md).
 
 ## Stage 2.6 hardening review - 2026-10-09
@@ -634,12 +638,12 @@ Stage 2.6 file is involved in that build.
 
 ### The original Stage 2.6 record
 
-**Status: LOCALLY VALIDATED / AWAITING OWNER REVIEW.** Not accepted, not hosted verified, not
-committed, not pushed, not deployed.
-
-All five authentication routes are now protected by Redis-backed distributed meters that share state
-across API instances. The design, policies, key construction, outage behaviour, and residual risks are
-specified in [docs/security/RATE_LIMITING.md](docs/security/RATE_LIMITING.md).
+**Status: superseded by the hardening record above.** The implementation described here was hardened
+before commit and is now `ca66284`; the pre-hardening wording is retained as history only and no longer
+describes the committed code. All five authentication routes are now protected by Redis-backed
+distributed meters that share state across API instances. The design, policies, key construction, outage
+behaviour, and residual risks are specified in
+[docs/security/RATE_LIMITING.md](docs/security/RATE_LIMITING.md).
 
 **Algorithm.** One Redis Lua script evaluates every dimension of a request atomically as a token
 bucket. A request is admitted only when every dimension has capacity, and **nothing is written unless
@@ -704,7 +708,8 @@ one Node toolchain test); build PASS across 8 tasks; `check` PASS; integration t
 smoke PASS at 22 assertions including 3 new startup-failure cases for the required secret; mobile check
 PASS; Android export PASS at 578 modules; `git diff --check` PASS. `pnpm audit --audit-level=high`
 **EXPECTED FAIL** on exactly node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm - no new
-finding, no suppression, threshold unchanged. Hosted CI was **not run**, because nothing is committed.
+finding, no suppression, threshold unchanged. Hosted CI was **not run** at this checkpoint, because nothing
+was committed yet; it was subsequently run as `38123962717` on `ca66284` after the hardening review.
 
 **Escalation for owner decision.** No bound on simultaneous Argon2id verifications is enforced. The global
 budget caps Argon2id verifications **started**, not **simultaneous** 64 MiB allocations. A genuine
@@ -714,10 +719,21 @@ Stage 2.6 leaves open. Separately, a TLS-terminating load balancer would collaps
 source bucket, and no proxy-trust model has been
 decided. Both need owner decisions before public deployment, along with a production HMAC secret.
 
-**Superseded by the hardening review above.** The concurrency bound is now enforced by a deployment-wide
-leased semaphore, and the concurrent-bypass weakness is closed by reservation with refund. What remains for
-decision is the value of that bound, the newly hard Redis dependency, the proxy-trust model, and the
-production secret.
+**Superseded by the hardening review above, and the escalation is now decided.** The concurrency bound is
+enforced by a deployment-wide leased semaphore with a provisional capacity of 8 valid leases, and the
+concurrent-bypass weakness is closed by reservation with refund. The owner has recorded these decisions:
+capacity 8 is provisional; Redis is a hard dependency for login and password recovery; transport-peer
+identity remains authoritative and no trusted proxy model is approved; production use behind a shared
+TLS-terminating proxy remains blocked pending architecture review; `API_RATE_LIMIT_HMAC_SECRET` must be
+securely injected and shared by every replica; development thresholds remain provisional and production
+tuning is deferred.
+
+**Still open and not resolved by acceptance.** Lease-expiry over-admission - the bound is on valid leases,
+not on physically running Argon2id operations. Redis unavailability makes login and both recovery endpoints
+unavailable. A refund that cannot be written is lost. There is no approved trusted proxy model. HMAC secret
+rotation resets every active window and fails open for up to one window. Redis Cluster has not been
+exercised. Production email delivery is not configured. **This stage is not production readiness and
+production deployment remains prohibited.**
 
 **Unchanged.** Argon2id parameters, the password policy, recovery token entropy and expiry, token
 single-use, reset transaction atomicity, the shared advisory-lock protocol, credential fingerprint
