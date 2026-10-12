@@ -18,6 +18,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { settleRequests } from './support/track-requests.mjs';
+import { clearOrphanSecurityEvents } from './support/event-cleanup.mjs';
 import { parseIntegrationEnvironment } from '@tsms/config';
 import { createDatabaseClient, closeDatabase } from '@tsms/database';
 import { assertDisposableTestDatabase } from '@tsms/database/testing';
@@ -107,6 +109,18 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await settleRequests();
+  // This suite created users and never removed them, so every run left synthetic accounts behind - and,
+  // since Stage 2.7 records events, the events that make deleting a user fail under `ON DELETE RESTRICT`.
+  // Child rows first, then the accounts, scoped to the ids this suite created.
+  if (db && ids?.length > 0) {
+    await db.authenticationEvent.deleteMany({ where: { userId: { in: ids } } });
+    await db.session.deleteMany({ where: { userId: { in: ids } } });
+    await db.passwordResetToken.deleteMany({ where: { userId: { in: ids } } });
+    await db.passwordCredential.deleteMany({ where: { userId: { in: ids } } });
+    await db.user.deleteMany({ where: { id: { in: ids } } });
+  }
+  if (db) await clearOrphanSecurityEvents(db);
   if (redis) await closeRedis(redis);
   if (db) await closeDatabase(db);
 });

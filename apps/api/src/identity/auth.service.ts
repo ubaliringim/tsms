@@ -10,6 +10,8 @@ import {
 import { SessionService } from './session.service.js';
 import { SessionError } from './session-error.js';
 import { lockUserSessionMutations } from './user-session-lock.js';
+import type { SecurityEventRecorder } from './security-event-recorder.js';
+import type { SecurityLog } from './security-log.js';
 
 export type AuthErrorCode =
   | 'AUTHENTICATION_FAILED'
@@ -111,8 +113,33 @@ export class AuthService {
      * simultaneous verification. `login` is therefore the one place that cannot be served without it.
      */
     private readonly argon2id: Argon2idAdmissionService,
+    /**
+     * Stage 2.7. Required rather than optional, for the same reason as `argon2id`: a recorder that is
+     * absent must not degrade into "no security events are written", because a clean event table and a
+     * broken one look identical from outside.
+     */
+    private readonly events: SecurityEventRecorder,
+    private readonly securityLog: SecurityLog,
     private readonly clock: () => Date = () => new Date(),
   ) {}
+
+  /**
+   * Record a refused sign-in.
+   *
+   * `userId` is the account the attempt resolved to, or `null` when the address matched nothing. The
+   * distinction is deliberate and stays internal: it is what makes a credential-stuffing run against one
+   * account visible, and it is never returned to the caller, so it creates no enumeration oracle.
+   *
+   * Best-effort by construction - the recorder's detached path cannot throw - because the request has
+   * already failed and turning a lost audit row into a different status code would itself leak.
+   */
+  private async recordLoginFailure(userId: string | null, requestId?: string): Promise<void> {
+    await this.events.detached({
+      eventType: 'LOGIN_FAILED',
+      userId,
+      requestId,
+    });
+  }
 
   /**
    * Authenticate a submitted address and password, then create a session.
@@ -120,9 +147,12 @@ export class AuthService {
    * Every failure - unknown address, wrong password, no credential record, disabled account -
    * raises the same `AUTHENTICATION_FAILED`, so the caller cannot distinguish them.
    */
-  async login(email: unknown, password: unknown): Promise<LoginResult> {
+  async login(email: unknown, password: unknown, requestId?: string): Promise<LoginResult> {
     const normalizedEmail = normalizeEmail(email);
     if (normalizedEmail === null || typeof password !== 'string') {
+      // Deliberately not recorded as a failed login: a malformed body is a rejected request, not an
+      // authentication attempt, and an attacker can generate those at will without ever attempting to
+      // authenticate. Recording them would inflate the event table with attempts that were never made.
       throw new AuthError('INVALID_REQUEST');
     }
 
@@ -130,14 +160,21 @@ export class AuthService {
     // needlessly serialise a request that only ever does one of them.
     try {
       return await withArgon2idSlot(this.argon2id, () =>
-        this.verifyAndCreateSession(normalizedEmail, password),
+        this.verifyAndCreateSession(normalizedEmail, password, requestId),
       );
     } catch (error) {
       // Stage 2.6 hardening. The deployment is at its simultaneous-verification bound, or the bound
       // could not be confirmed. Either way no Argon2id is attempted and no session is created. The
       // caller maps this to the same sanitized `503` as any other service failure, so it is
       // indistinguishable from an infrastructure problem - which is what it is.
-      if (error instanceof Argon2idAdmissionRefused) throw new AuthError('SERVICE_FAILURE');
+      if (error instanceof Argon2idAdmissionRefused) {
+        this.securityLog.record('argon2id_admission_refused', {
+          endpoint: 'login',
+          requestId,
+          reason: 'argon2id_unavailable',
+        });
+        throw new AuthError('SERVICE_FAILURE');
+      }
       throw error;
     }
   }
@@ -146,6 +183,7 @@ export class AuthService {
   private async verifyAndCreateSession(
     normalizedEmail: string,
     password: string,
+    requestId?: string,
   ): Promise<LoginResult> {
     const user = await this.database.user.findUnique({
       where: { normalizedEmail },
@@ -176,10 +214,11 @@ export class AuthService {
       // Unknown address, disabled account, or no credential record. Pay the real verification
       // cost anyway so duration does not become an account-existence oracle.
       await this.burnVerification(password);
+      await this.recordLoginFailure(user?.id ?? null, requestId);
       throw new AuthError('AUTHENTICATION_FAILED');
     }
 
-    return this.createSessionUnderLock(user, verified);
+    return this.createSessionUnderLock(user, verified, requestId);
   }
 
   /**
@@ -203,6 +242,7 @@ export class AuthService {
   private async createSessionUnderLock(
     user: { id: string; email: string; displayName: string },
     verified: { version: number; fingerprint: string },
+    requestId?: string,
   ): Promise<LoginResult> {
     try {
       const created = await this.database.$transaction(async (tx) => {
@@ -241,7 +281,19 @@ export class AuthService {
           throw new AuthError('AUTHENTICATION_FAILED');
         }
 
-        return await this.sessions.createSessionInTransaction(tx, user.id);
+        const created = await this.sessions.createSessionInTransaction(tx, user.id);
+
+        // Stage 2.7. Written on this transaction, after the session insert, so the two commit or roll
+        // back together. A LOGIN_SUCCEEDED row can therefore never outlive a rolled-back session, and a
+        // committed session can never be missing its audit record. This is the only place a login is
+        // declared successful, which is why it is here and not in the handler.
+        await this.events.inTransaction(tx, {
+          eventType: 'LOGIN_SUCCEEDED',
+          userId: user.id,
+          requestId,
+        });
+
+        return created;
       });
 
       return {
@@ -249,13 +301,23 @@ export class AuthService {
         ...created,
       };
     } catch (error) {
-      if (error instanceof AuthError) throw error;
+      if (error instanceof AuthError) {
+        // Stage 2.7. The in-lock revalidation refusals above roll this transaction back, so the success
+        // event written inside it is already gone. Record the refusal here, where the decision is final.
+        if (error.code === 'AUTHENTICATION_FAILED') {
+          await this.recordLoginFailure(user.id, requestId);
+        }
+        throw error;
+      }
       if (error instanceof SessionError) {
         if (
           error.code === 'USER_DISABLED' ||
           error.code === 'USER_NOT_FOUND' ||
           error.code === 'INVALID_INPUT'
         ) {
+          // The session primitive refused the account (for example disabled after the in-lock check).
+          // The caller sees the same 401 as any refusal, so it is recorded as one.
+          await this.recordLoginFailure(user.id, requestId);
           throw new AuthError('AUTHENTICATION_FAILED');
         }
         throw new AuthError('SERVICE_FAILURE');
@@ -288,16 +350,37 @@ export class AuthService {
    * whether the token ever existed. Only this session is revoked, so a user's other sessions and
    * other users' sessions are untouched.
    */
-  async logout(token: unknown): Promise<void> {
+  async logout(token: unknown, requestId?: string): Promise<void> {
     let session: { userId: string; sessionId: string; expiresAt: Date };
     try {
       session = await this.resolve(token);
     } catch (error) {
-      if (error instanceof AuthError && error.code === 'AUTHENTICATION_FAILED') return;
+      if (error instanceof AuthError && error.code === 'AUTHENTICATION_FAILED') {
+        // Deliberately no event. A logout with no valid session ends nothing, and recording one would let
+        // anyone generate unlimited `LOGOUT` rows by calling this endpoint in a loop.
+        return;
+      }
       throw error;
     }
     try {
-      await this.sessions.revokeSession(session.sessionId, session.userId);
+      // Stage 2.7. Revocation and its event share one transaction, so `LOGOUT` can never exist for a
+      // session that was not actually revoked. Only the token's own session is revoked, and only when it
+      // was still live - an already-revoked session keeps its original timestamp and produces no event,
+      // which is what keeps logout idempotent.
+      await this.database.$transaction(async (tx) => {
+        const result = await this.sessions.revokeSessionInTransaction(
+          tx,
+          session.sessionId,
+          session.userId,
+        );
+        if (result.revoked) {
+          await this.events.inTransaction(tx, {
+            eventType: 'LOGOUT',
+            userId: session.userId,
+            requestId,
+          });
+        }
+      });
     } catch (error) {
       // A session removed between validation and revocation is already revoked.
       if (

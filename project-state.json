@@ -4,9 +4,9 @@
   "company": "TeamStack Technologies LTD",
   "updatedAt": "2026-10-11",
   "phase": "foundation",
-  "stage": "2.6",
-  "stageName": "Rate Limiting & Abuse Protection",
-  "stageStatus": "accepted_hosted_verified_closed",
+  "stage": "2.7",
+  "stageName": "Security Events & Sanitization",
+  "stageStatus": "implementation_committed_hosted_verification_pending",
   "implementationAuthorized": true,
   "previousStage": {
     "stage": "1",
@@ -15,22 +15,22 @@
     "acceptedAt": "2026-10-07",
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
-  "task": "2.6",
-  "status": "accepted_hosted_verified_closed",
-  "reviewStatus": "complete",
+  "task": "2.7",
+  "status": "implementation_committed_hosted_verification_pending",
+  "reviewStatus": "implementation_committed_awaiting_hosted_result",
   "nextTask": {
-    "id": "2.7",
-    "name": "Security Events & Sanitization",
+    "id": "2.8",
+    "name": "Stage 2.8 (not yet specified)",
     "status": "not_started_unauthorized",
     "implementationAuthorized": false,
     "accepted": false,
     "hostedVerified": false,
     "record": null,
-    "nextAction": "Await separate owner authorization. Stage 2.7 has NOT been started and must not be started under the Stage 2.6 closure."
+    "nextAction": "Await separate owner authorization. Stage 2.8 is NOT STARTED and is NOT AUTHORIZED."
   },
   "nextPlannedStage": {
-    "stage": "2.7",
-    "name": "Security Events & Sanitization",
+    "stage": "2.8",
+    "name": "Stage 2.8 (not yet specified)",
     "implementationAuthorized": false
   },
   "blocked": false,
@@ -930,8 +930,8 @@
     "2.3": "accepted_hosted_verified_closed",
     "2.4": "accepted_hosted_verified_closed",
     "2.5": "accepted_hosted_verified_closed",
-    "2.6": "locally_validated_awaiting_owner_review",
-    "2.7": "not_started_unauthorized"
+    "2.6": "accepted_hosted_verified_closed",
+    "2.7": "implementation_committed_hosted_verification_pending"
   },
   "stage24": {
     "status": "closed_hosted_verification_complete",
@@ -1663,6 +1663,312 @@
       "historyPreserved": true
     }
   ],
+  "stage27": {
+    "status": "implementation_committed_hosted_verification_pending",
+    "accepted": false,
+    "hostedVerified": false,
+    "authorization": {
+      "stage": "2.7",
+      "scope": "Security events and sanitization for the accepted authentication surface",
+      "authorizedBy": "TeamStack Technologies LTD",
+      "implementationAndLocalValidationOnly": true,
+      "commitPushOrDeployAuthorized": false,
+      "laterStagesAuthorized": false,
+      "deploymentAuthorized": false
+    },
+    "contract": "docs/security/SECURITY_EVENTS.md",
+    "schemaChangeRequired": false,
+    "schemaNote": "The accepted Stage 2.1 AuthenticationEvent model is reused unchanged. It has four writable columns and no metadata column, which is what makes the privacy allowlist structural rather than procedural. No enum extension was performed.",
+    "escalatedForOwnerDecision": "Rate-limit denials, Redis unavailability, Argon2id admission refusals, and rejected recovery tokens have no representable AuthenticationEventType. They are recorded as throttled sanitized log lines instead. Making them queryable in the event table requires an enum migration, which needs owner authorization.",
+    "eventsWritten": {
+      "LOGIN_SUCCEEDED": "transaction-coupled to the login transaction, after the session insert; fail-closed",
+      "LOGIN_FAILED": "detached and best-effort; never changes the response, to preserve the accepted enumeration boundary",
+      "LOGOUT": "transaction-coupled to the revocation; only recorded when a live session was actually revoked",
+      "SESSION_REVOKED": "one row per session a password reset actually revoked, on the reset transaction",
+      "PASSWORD_RESET_REQUESTED": "third statement of the token-issuing transaction",
+      "PASSWORD_RESET_COMPLETED": "transaction-coupled to the reset transaction; fail-closed"
+    },
+    "eventsDeliberatelyUnused": {
+      "ACCOUNT_DISABLED": "describes a state change that no action performs; a refusal on a disabled account is LOGIN_FAILED",
+      "PASSWORD_CHANGED": "PASSWORD_RESET_COMPLETED already states it more precisely",
+      "EMAIL_VERIFIED": "no registration path exists"
+    },
+    "metadataAllowlist": ["eventType", "occurredAt", "userId", "requestId"],
+    "neverRecorded": "passwords, recovery tokens, session bearer tokens, cookie values, Authorization headers, request bodies, password hashes or fingerprints, email addresses, client IP addresses, Redis keys, HMAC inputs, driver errors, stack traces",
+    "volumeControl": {
+      "summary": "The claim that stored events are inherently bounded was checked and is only partly true.",
+      "loginFailed": "One row per admitted failed attempt; bounded by per-account 8/15min, per-source 10/5min and the global Argon2id budget of 120/min.",
+      "loginSucceeded": "Bounded only by the global Argon2id budget (120/min fleet-wide, about 172,800/day); successes are refunded by design so no per-account cap applies. Pinned by a test.",
+      "logout": "One row per live session actually revoked; 40 concurrent logouts of one session produce one row.",
+      "sessionRevoked": "One row per live session a reset revoked. No per-user session cap exists and sessions live 7 days, so this fans out. Owner decision needed.",
+      "deniedOutagesRefusals": "No rows. Throttled log lines, two per kind and endpoint per five seconds per process.",
+      "proved": "Refused requests leave no row, asserted by correlation id for login, recovery and logout floods."
+    },
+    "correlation": {
+      "mechanism": "server-generated random UUID per request, stored on a symbol-keyed request property and echoed in X-Request-Id",
+      "inboundHeaderTrusted": false,
+      "why": "A caller-chosen value would let an attacker correlate unrelated requests and place chosen text into an audit row."
+    },
+    "errorSanitization": {
+      "change": "SafeHttpExceptionFilter now answers a non-HttpException failure itself with a constant body and a sanitized log line, instead of delegating to Nest's handleUnknownError.",
+      "why": "The framework echoes exception.message for any thrown value shaped like an HTTP error, and its logger call is a no-op because Nest logging is disabled, so unexpected failures produced both a latent disclosure path and no diagnostic at all.",
+      "publicContractChange": "none; HttpException still delegates, and the body matches what the framework produced"
+    },
+    "negativeControls": [
+      {
+        "control": "LOGIN_SUCCEEDED moved out of its transaction",
+        "result": "Coupling test failed; login succeeded with no audit record. Reverted."
+      },
+      {
+        "control": "SESSION_REVOKED counted by a read before the update",
+        "result": "Interleaving test failed: 3 reported, 2 revoked. Reverted."
+      },
+      {
+        "control": "Log allowlist turned into a pass-through",
+        "result": "3 sanitisation unit tests failed. Reverted."
+      },
+      {
+        "control": "Guard SecurityLog import made type-only",
+        "result": "2 DI tests failed and a real boot rejected with a legible message instead of aborting silently. Reverted."
+      },
+      {
+        "control": "src edited, vitest run directly without a rebuild",
+        "result": "Both vitest configs refused to start with rebuild instructions."
+      }
+    ],
+    "defectsFoundAndFixed": [
+      {
+        "defect": "The abuse guard imported SecurityLog as a type-only import, so Nest's emitted design metadata recorded Function and the application aborted at startup.",
+        "severity": "Total outage of the API, silent because logger is false and abortOnError calls process.abort().",
+        "fix": "Use a value import for the constructor-injected dependency."
+      },
+      {
+        "defect": "Integration tests ran against a stale dist and reported 239 passing while none of the new code was loaded.",
+        "severity": "A false green on the most important suite in the repository.",
+        "fix": "Rebuild before running; the real run then exposed the teardown and DI failures.",
+        "note": "This is a pre-existing property of the local command sequence: turbo does not rebuild for a direct package-level test:integration run."
+      },
+      {
+        "defect": "Test teardowns deleted users before authentication events, and the accepted ON DELETE RESTRICT rejected that.",
+        "severity": "Test-only, but it proved the accepted constraint now does real work.",
+        "fix": "Teardowns clear event rows for their own fixture accounts first."
+      },
+      {
+        "defect": "SESSION_REVOKED was counted by a pre-read; logout takes no lock, so a concurrent logout was reported by both events.",
+        "fix": "Count from the rows the update revoked."
+      },
+      {
+        "defect": "abortOnError stayed true with logging off, so any future injection failure would abort silently.",
+        "fix": "abortOnError false; startup error message allowlisted to Nest resolution errors."
+      },
+      {
+        "defect": "The exception filter held its own SecurityLog instance.",
+        "fix": "Resolve the shared provider."
+      },
+      {
+        "defect": "A disabled-during-login refusal wrote no LOGIN_FAILED; a token rejected inside the reset transaction was not logged.",
+        "fix": "Both recorded."
+      },
+      {
+        "defect": "PASSWORD_RESET_REQUESTED bypassed the sanitising row builder while the spec said it did not.",
+        "fix": "Built with securityEventRow."
+      },
+      {
+        "defect": "No guard against stale or orphaned apps/api/dist; two orphaned compiled files existed.",
+        "fix": "tests/support/dist-freshness.mjs as a vitest globalSetup in both configs; orphans removed."
+      },
+      {
+        "defect": "rate-limit-concurrency suite never removed its users; null-user events matched no cleanup; several assertions were vacuous.",
+        "fix": "Cleanup added, assertions tied to request ids."
+      }
+    ],
+    "tests": {
+      "unit": [
+        "apps/api/tests/security-events.test.mjs (25)",
+        "apps/api/tests/startup-and-di.test.mjs (15)"
+      ],
+      "integration": "apps/api/tests/security-events.integration.test.mjs (42)"
+    },
+    "remainingRisks": [
+      "Three required security questions are not queryable in the event table; they exist only as log lines.",
+      "Log throttle state is per process, so N replicas emit up to N lines per key per window.",
+      "Log lines are not durable and are lost on crash or rotation.",
+      "No event read API exists; the table is write-only.",
+      "Retention is undefined: no purge, archive, or retention policy exists.",
+      "LOGIN_FAILED reveals account existence to anyone who can read the table, so table access is a privileged operation and access control is undefined.",
+      "No alerting; this stage records, it does not detect.",
+      "All Stage 2.6 limitations persist, and production deployment remains prohibited.",
+      "LOGIN_SUCCEEDED is bounded only by the global Argon2id budget, not per account or per source.",
+      "The LOGIN_FAILED write occurs while the Argon2id slot is held.",
+      "Log-only outcomes are non-durable and need retention, centralised collection, restricted access and alerting before production.",
+      "A reset is one transaction and still fails closed near 100,000+ live sessions on the reference machine (accepted revoke-only baseline fails between 100,000 and 200,000); no per-user session cap exists.",
+      "The 30s rate-limit-hardening timeout was observed twice and not reproduced in 14 later runs; attributed, unproven, to host memory pressure."
+    ],
+    "stages26AndEarlierPreserved": "Stages 0, 1 and 2.1 through 2.6 remain ACCEPTED / HOSTED VERIFIED / CLOSED and are untouched by this stage.",
+    "validation": {
+      "date": "2026-10-12",
+      "frozenInstall": "pass_lockfile_unchanged",
+      "prismaGenerate": "pass",
+      "formatCheck": "pass",
+      "lint": "pass",
+      "typecheck": "pass_12_tasks",
+      "test": "pass_292_unit_toolchain (config 37, redis 4, database 17, worker 4, api 229, toolchain 1)",
+      "build": "pass_8_tasks",
+      "check": "pass",
+      "integrationTests": "pass_382_zero_skipped (redis 66, database 35, api 281)",
+      "migrations": "3 applied, 0 pending",
+      "smoke": "pass_22_assertions",
+      "mobileCompatibility": "pass",
+      "mobileExport": "pass_android_578_modules",
+      "diffCheck": "pass",
+      "dependencyAudit": "expected_fail_exactly_node-forge_GHSA-86w9-cpqp-85rv_and_braces_GHSA-vfj7-8cjw-p6xm_no_new_findings",
+      "hostedCI": "not_run",
+      "staleDistGuardActive": true
+    },
+    "testDatabase": {
+      "database": "tsms_test (dedicated TEST_DATABASE_URL target, loopback, _test suffix)",
+      "leftoverRows": "581 synthetic @example.test users (221 with events), 116 sessions, 572 events, 0 orphan events; identical before and after a full integration run",
+      "removed": false,
+      "reason": "A targeted delete was declined by the execution environment and the owner has not approved one. Nothing depends on the rows.",
+      "ownerDecision": "Approve a delete scoped to @example.test users and their child rows, or leave them.",
+      "causes": [
+        "interrupted runs",
+        "rate-limit-concurrency suite never cleaned up",
+        "null-user LOGIN_FAILED events matched no per-suite cleanup"
+      ]
+    },
+    "recommendationOnUncoveredCategories": "Accept log-only for Stage 2.7 on condition that log retention and alerting are prerequisites for production use; defer enum extension to the stage that designs retention, access control and alerting together. Owner decision.",
+    "takeoverReview": {
+      "by": "Claude Code",
+      "date": "2026-10-11",
+      "previousAgent": "OpenCode",
+      "baselineCommit": "8442769f4642a3d0dad9735ecb8d7db0628a8479",
+      "committed": true,
+      "pushed": true
+    },
+    "changedFilesThisReview": [
+      "apps/api/src/application.ts",
+      "apps/api/src/identity/auth.service.ts",
+      "apps/api/src/identity/password-recovery.service.ts",
+      "apps/api/vitest.config.ts",
+      "apps/api/vitest.integration.config.ts",
+      "apps/api/tests/support/dist-freshness.mjs",
+      "apps/api/tests/support/event-cleanup.mjs",
+      "apps/api/tests/startup-and-di.test.mjs",
+      "apps/api/tests/security-events.integration.test.mjs",
+      "apps/api/tests/rate-limit-concurrency.integration.test.mjs",
+      "apps/api/tests/auth.integration.test.mjs",
+      "apps/api/tests/rate-limit.integration.test.mjs",
+      "apps/api/tests/rate-limit-hardening.integration.test.mjs",
+      "docs/security/SECURITY_EVENTS.md",
+      "PROJECT_STATE.md",
+      "project-state.json",
+      "tasks/CURRENT.md",
+      "tasks/ROADMAP.md",
+      "apps/api/src/identity/security-event-recorder.ts",
+      "apps/api/tests/security-events.test.mjs",
+      "apps/api/tests/benchmarks/reset-fanout.mjs",
+      "apps/api/tests/support/track-requests.mjs"
+    ],
+    "nextAction": "Read the hosted run for the implementation commit; await the owner documentation-closure decision. No closure commit, deployment or Stage 2.8 without explicit authorization.",
+    "finalDesignReview": {
+      "date": "2026-10-11",
+      "ownerDecisions": {
+        "logOnlyOutcomes": "approved",
+        "migrationOrEnumExpansion": "not_approved",
+        "perUserSessionCap": "not_approved",
+        "aggregateSessionRevokedRow": "not_approved_without_proof_of_truthful_semantics",
+        "deleteTestRows": "not_approved",
+        "removeProbeTxt": "not_approved",
+        "commitPushDeployStage28": "not_authorized"
+      },
+      "sessionRevoked": {
+        "meaning": "one row per individual session a committed password reset revoked, counted from the reset UPDATE itself",
+        "boundedTruthfulRepresentationPossible": false,
+        "reason": "The accepted schema has no count, session id or free-text column; one row per reset would lose the number and a capped number of rows would under-report.",
+        "measured": {
+          "1000": "ok 0.7s",
+          "5000": "ok 2.2s",
+          "10000": "ok 3.2s",
+          "20000": "fails closed 503 P2028 5.9s",
+          "50000": "fails closed 503 P2028 15.9s"
+        },
+        "introducedByStage27": true,
+        "blocksProduction": false,
+        "decisionsNeeded": [
+          "per-user session cap",
+          "same-semantics server-side INSERT SELECT",
+          "larger explicit transaction timeout",
+          "schema change that can represent a count"
+        ],
+        "correctedOn": "2026-10-12 (see sessionRevokedFanOutCorrection)"
+      },
+      "detachedLoginFailed": "detached() could reject on an invalid event type; fixed. Unit tests cover database error, invalid type, un-awaited call, no retry, bounded failure log.",
+      "staleDistGuard": "Forward-slash messages on all platforms; Windows exercised, Linux CI not run; no timestamp tolerance added.",
+      "logging": "One shared SecurityLog; log lines are non-durable operational diagnostics, not audit events.",
+      "productionPrerequisitesForLogOnly": [
+        "retention",
+        "centralised collection",
+        "restricted access",
+        "alerting",
+        "aggregation awareness"
+      ],
+      "testDatabase": {
+        "historicalUsersUntouched": 581,
+        "residueFromFailedRun": "1 user and 6 events; scoped delete declined",
+        "currentCounts": "582 users, 578 events, 0 orphan events, 116 sessions"
+      }
+    },
+    "sessionRevokedFanOutCorrection": {
+      "date": "2026-10-12",
+      "authorizedBy": "TeamStack Technologies LTD",
+      "committed": true,
+      "rootCause": "One event row per session was written from the application inside Prisma 5s interactive transaction; above about 20,000 live sessions the reset failed closed with P2028.",
+      "correction": "SecurityEventRecorder.revokeLiveSessionsRecordingEvents: one statement, UPDATE ... RETURNING feeding INSERT ... SELECT, on the reset transaction.",
+      "semantics": "Exactly one SESSION_REVOKED per session that statement revoked; no pre-read; fail-closed; no schema change; taxonomy unchanged.",
+      "uuid": "PostgreSQL 17.11 has no uuidv7() and no pgcrypto; id built in SQL to RFC 9562 (ms timestamp, version 7, RFC variant, gen_random_uuid randomness). Requires PostgreSQL 13+. Verified by tests; a v4 fails the control.",
+      "benchmarks": {
+        "method": "apps/api/tests/benchmarks/reset-fanout.mjs; one user; real reset; 3 trials to 50000, 2 above; Windows 11 Docker Desktop PostgreSQL 17.11",
+        "1000": "ok median 332ms",
+        "5000": "ok median 589ms",
+        "10000": "ok median 845ms",
+        "20000": "ok median 1226ms",
+        "50000": "ok median 4196ms (3542-4860, marginal)",
+        "75000": "ok 3396ms",
+        "100000": "ok 3888ms",
+        "150000": "fails closed P2028",
+        "baselineRevokeOnly": "10000 0.38s; 50000 1.9s; 100000 3.8s; 200000 one P2028 and one ok 7.0s",
+        "originalPerRow": "10000 3.2s; 20000 P2028 at 5.9s",
+        "memory": "RSS growth at most 1.8 MiB"
+      },
+      "controls": [
+        "Reverting to pre-read counting fails 3 tests",
+        "Replacing the UUIDv7 expression with gen_random_uuid fails 1 test"
+      ],
+      "newTests": "security-events.integration.test.mjs 35 to 42 (UUIDv7 and timestamp, 25000-session fan-out, interleaved revoke, real logout holding the row synchronised on a lock wait, rollback of the statement, rollback after revocation ran, concurrent resets, no event for revoked or expired, other users untouched)",
+      "testLifecycle": "tests/support/track-requests.mjs wraps fetch; settleRequests() in every teardown refuses new requests and waits for in-flight ones, closing the leak that left one user and six events after a timed-out test.",
+      "timeout30s": "Not reproduced in 14 further runs (3.6-5.2s, 6 monitored with 101 pg_stat_activity samples showing no lock waits). Observed twice on the first run after heavy activity with 1.0 of 15.8 GiB host memory free. Probable host contention, unproven. No timeout raised.",
+      "remainingBoundary": "A reset is one transaction; it still fails closed near 100,000+ live sessions on the reference machine. No per-user session cap (not approved). Accepted revoke-only baseline fails between 100,000 and 200,000.",
+      "untouched": [
+        "581 historical test users",
+        "residual user with six events",
+        "apps/api/probe.txt"
+      ]
+    },
+    "closed": false,
+    "ownerDecision": "Locally accepted for an implementation commit and hosted CI verification. The high-session-count reset availability boundary is provisionally accepted for development, not for production readiness. Not closed.",
+    "unresolvedRisksAtImplementationCommit": [
+      "Password reset still fails closed at sufficiently large live-session counts; the 100,000-session success is one observation on one machine, not a production guarantee; no per-user session cap.",
+      "SESSION_REVOKED still writes one event row per revoked session.",
+      "LOGIN_SUCCEEDED has no per-account event-volume bound.",
+      "Structured security logs are non-durable, throttled per process, and are not audit events.",
+      "Log retention, centralised collection, access control and alerting are production prerequisites.",
+      "Event-table retention and read access are undefined.",
+      "Test performance varies under host memory pressure.",
+      "Stage 2.6 limitations remain (Redis, proxy, HMAC, thresholds, lease expiry, lost refunds, Redis Cluster, email provider).",
+      "node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm remain open and unsuppressed."
+    ]
+  },
   "stage26": {
     "status": "accepted_hosted_verified_closed",
     "accepted": true,

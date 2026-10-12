@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { settleRequests } from './support/track-requests.mjs';
+import { clearOrphanSecurityEvents } from './support/event-cleanup.mjs';
 import { parseIntegrationEnvironment } from '@tsms/config';
 import { createDatabaseClient, closeDatabase } from '@tsms/database';
 import { assertDisposableTestDatabase } from '@tsms/database/testing';
@@ -52,7 +54,13 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await settleRequests();
   if (!db) return;
+  // Stage 2.7: authentication_events has ON DELETE RESTRICT against user, so event rows for these
+  // accounts must be cleared before the accounts. That constraint is the accepted Stage 2.1 behaviour
+  // working as designed - a security history must survive the deletion of the account it describes.
+  await db.authenticationEvent.deleteMany({ where: { userId: { in: ids } } });
+  await clearOrphanSecurityEvents(db);
   await db.session.deleteMany({ where: { userId: { in: ids } } });
   await db.passwordCredential.deleteMany({ where: { userId: { in: ids } } });
   await db.user.deleteMany({ where: { id: { in: ids } } });
@@ -627,10 +635,20 @@ describe('Stage 2.4 scope regression', () => {
     expect((await ready.json()).ready).toBe(true);
   });
 
-  it('writes no authentication events and creates no session for a failed login', async () => {
+  it('records exactly one failed-login event and creates no session', async () => {
+    // Stage 2.7. This assertion used to be "writes no authentication events", which was correct while
+    // the writer did not exist. It now asserts the intended behaviour instead: the refusal is recorded,
+    // attributed to the account that was attempted, and correlated with the request that made it - and
+    // crucially no session exists, because a failure is not a login.
     const user = await account();
-    await login(user.email, OTHER_PASSWORD);
-    expect(await db.authenticationEvent.count({ where: { userId: { in: ids } } })).toBe(0);
+    const response = await login(user.email, OTHER_PASSWORD);
+    expect(response.status).toBe(401);
+
+    const events = await db.authenticationEvent.findMany({ where: { userId: user.id } });
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe('LOGIN_FAILED');
+    // The correlation id is server-generated and present, proving the event is linked to one request.
+    expect(events[0].requestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(await sessionCount()).toBe(0);
   });
 });

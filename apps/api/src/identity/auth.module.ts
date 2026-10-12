@@ -26,6 +26,8 @@ import { ABUSE_PROTECTION, AuthAbuseGuard } from './auth-abuse.guard.js';
 import { AbuseReservationInterceptor } from './abuse-reservation.interceptor.js';
 import { Argon2idAdmissionService } from './argon2id-admission.service.js';
 import { ARGON2ID_CONCURRENCY } from './auth-abuse-policy.js';
+import { SECURITY_LOG, SecurityLog } from './security-log.js';
+import { SecurityEventRecorder } from './security-event-recorder.js';
 import { DatabaseService } from '../infrastructure/database.service.js';
 import { RedisService } from '../infrastructure/redis.service.js';
 
@@ -119,12 +121,17 @@ export class AuthModule implements NestModule {
             credentials: PasswordCredentialService,
             sessions: SessionService,
             argon2id: Argon2idAdmissionService,
-          ) => new AuthService(database.prisma, credentials, sessions, argon2id),
+            events: SecurityEventRecorder,
+            securityLog: SecurityLog,
+          ) =>
+            new AuthService(database.prisma, credentials, sessions, argon2id, events, securityLog),
           inject: [
             DatabaseService,
             PasswordCredentialService,
             SessionService,
             Argon2idAdmissionService,
+            SecurityEventRecorder,
+            SECURITY_LOG,
           ],
         },
         {
@@ -161,6 +168,23 @@ export class AuthModule implements NestModule {
           inject: [RedisService],
         },
         { provide: AbuseProtectionService, useExisting: ABUSE_PROTECTION },
+        /**
+         * Stage 2.7. One security log per process.
+         *
+         * Registered as a provider so the guard, the services, and the global exception filter all share
+         * one throttle state; a per-consumer instance would let each of them absorb its own flood
+         * independently and the bound would be three times weaker than it reads.
+         */
+        { provide: SECURITY_LOG, useFactory: (): SecurityLog => new SecurityLog() },
+        // Aliased so consumers can inject the concrete class, the way `AbuseProtectionService` above
+        // aliases its own token. Both names resolve to the same instance, so the throttle stays shared.
+        { provide: SecurityLog, useExisting: SECURITY_LOG },
+        {
+          provide: SecurityEventRecorder,
+          useFactory: (database: DatabaseService, securityLog: SecurityLog) =>
+            new SecurityEventRecorder(database.prisma, securityLog),
+          inject: [DatabaseService, SECURITY_LOG],
+        },
         AuthAbuseGuard,
         /**
          * Returns a reservation for an attempt that turned out not to be abuse, which is what keeps a
@@ -175,13 +199,26 @@ export class AuthModule implements NestModule {
             delivery: PasswordRecoveryDelivery,
             settings: RecoveryPolicySettings,
             argon2id: Argon2idAdmissionService,
+            events: SecurityEventRecorder,
+            securityLog: SecurityLog,
             clock: () => Date,
-          ) => new PasswordRecoveryService(database.prisma, delivery, settings, argon2id, clock),
+          ) =>
+            new PasswordRecoveryService(
+              database.prisma,
+              delivery,
+              settings,
+              argon2id,
+              events,
+              securityLog,
+              clock,
+            ),
           inject: [
             DatabaseService,
             RECOVERY_DELIVERY,
             RECOVERY_POLICY_SETTINGS,
             Argon2idAdmissionService,
+            SecurityEventRecorder,
+            SECURITY_LOG,
             RECOVERY_CLOCK,
           ],
         },

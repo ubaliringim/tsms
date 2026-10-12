@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { settleRequests } from './support/track-requests.mjs';
 import { parseIntegrationEnvironment } from '@tsms/config';
 import { createDatabaseClient, closeDatabase } from '@tsms/database';
 import { assertDisposableTestDatabase } from '@tsms/database/testing';
@@ -7,6 +8,8 @@ import { createRedisClient, closeRedis } from '@tsms/redis';
 import { createApplication } from '../dist/application.js';
 import { Argon2idAdmissionService } from '../dist/identity/argon2id-admission.service.js';
 import { ARGON2ID_CONCURRENCY } from '../dist/identity/auth-abuse-policy.js';
+import { SecurityLog } from '../dist/identity/security-log.js';
+import { SecurityEventRecorder } from '../dist/identity/security-event-recorder.js';
 import { resetRateLimitState } from './support/rate-limit-state.mjs';
 import { hashPassword } from '../dist/identity/password-hasher.js';
 import { PasswordCredentialService } from '../dist/identity/password-credential.service.js';
@@ -58,6 +61,18 @@ let credentials, sessions, recovery;
 const argon2idAdmission = (client) => new Argon2idAdmissionService(client, ARGON2ID_CONCURRENCY);
 
 /**
+ * Stage 2.7 collaborators.
+ *
+ * The sink is captured rather than printed so this suite stays quiet, and so a test can assert on what
+ * would have been written. The recorder is a real one against the real database: these tests exercise
+ * transaction boundaries, and a stub recorder would not prove that a success event rolls back with the
+ * transaction it belongs to.
+ */
+const securityLog = new SecurityLog({ sink: (record) => recorded.push(record) });
+const recorded = [];
+const events = () => new SecurityEventRecorder(db, securityLog);
+
+/**
  * Builds a login service whose password verification can be parked.
  *
  * The wrapper delegates to the accepted credential service and then blocks, which places the login
@@ -73,7 +88,7 @@ function authServiceWithPausedVerification(control) {
     }
     return outcome;
   };
-  return new AuthService(db, pausing, sessions, argon2idAdmission(redis));
+  return new AuthService(db, pausing, sessions, argon2idAdmission(redis), events(), securityLog);
 }
 
 /**
@@ -117,6 +132,8 @@ beforeAll(async () => {
       urlBase: RECOVERY_BASE,
     },
     argon2idAdmission(redis),
+    events(),
+    securityLog,
   );
   app = await createApplication({
     NODE_ENV: 'test',
@@ -150,7 +167,12 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await settleRequests();
   if (!db) return;
+  // Stage 2.7: authentication_events has ON DELETE RESTRICT against user, so event rows for these
+  // accounts must be cleared before the accounts. That constraint is the accepted Stage 2.1 behaviour
+  // working as designed - a security history must survive the deletion of the account it describes.
+  await db.authenticationEvent.deleteMany({ where: { userId: { in: ids } } });
   await db.session.deleteMany({ where: { userId: { in: ids } } });
   await db.passwordResetToken.deleteMany({ where: { userId: { in: ids } } });
   await db.passwordCredential.deleteMany({ where: { userId: { in: ids } } });

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { settleRequests } from './support/track-requests.mjs';
 import { parseIntegrationEnvironment } from '@tsms/config';
 import { createDatabaseClient, closeDatabase } from '@tsms/database';
 import { assertDisposableTestDatabase } from '@tsms/database/testing';
@@ -19,7 +20,12 @@ beforeEach(() => {
   service = new SessionService(db, () => new Date(time));
 });
 afterEach(async () => {
+  await settleRequests();
   if (!db) return;
+  // Stage 2.7: authentication_events has ON DELETE RESTRICT against user, so event rows for these
+  // accounts must be cleared before the accounts. That constraint is the accepted Stage 2.1 behaviour
+  // working as designed - a security history must survive the deletion of the account it describes.
+  await db.authenticationEvent.deleteMany({ where: { userId: { in: ids } } });
   await db.session.deleteMany({ where: { userId: { in: ids } } });
   await db.user.deleteMany({ where: { id: { in: ids } } });
   ids.length = 0;

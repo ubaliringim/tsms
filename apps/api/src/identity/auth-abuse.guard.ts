@@ -30,6 +30,8 @@ import {
 import { clientAddressOf } from './client-identity.js';
 import { AuthError, normalizeEmail } from './auth.service.js';
 import type { AbuseEndpoint } from './auth-abuse-policy.js';
+import { SecurityLog } from './security-log.js';
+import { requestIdOf } from './security-request-context.js';
 
 /** DI token for the abuse-protection service. */
 export const ABUSE_PROTECTION = Symbol('ABUSE_PROTECTION');
@@ -95,6 +97,10 @@ export class AuthAbuseGuard implements CanActivate {
   constructor(
     @Inject(ABUSE_PROTECTION) private readonly protection: AbuseProtectionService,
     private readonly reflector: Reflector,
+    // A value import, not `import type`: Nest constructs this guard and reads the parameter type from
+    // the emitted design metadata. A type-only import is erased, so the metadata records `Function` and
+    // the guard fails to resolve at startup.
+    private readonly securityLog: SecurityLog,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -131,6 +137,25 @@ export class AuthAbuseGuard implements CanActivate {
     });
 
     if (decision.kind === 'limited') {
+      // Stage 2.7. Recorded here because the guard is the last point at which the request is refused:
+      // the handler never runs, so nothing downstream could observe the decision.
+      //
+      // A log line rather than an event row, deliberately. A denial is attacker-triggerable without
+      // limit - the caller being told to back off can keep asking - and writing a row per denial would
+      // turn the abuse limiter into a database-amplification attack, with the write happening exactly
+      // when the system is asking the caller to stop. The log throttles per endpoint and reports a
+      // suppressed count, so a sustained flood stays visible without becoming a write amplifier.
+      //
+      // No dimension name and no Redis key is recorded. Which meter refused is operationally useful,
+      // but it is not available here without exposing the limiter's internal structure, and the public
+      // `429` body is deliberately identical for every meter - this must not become a side channel that
+      // an operator-facing log widens into something guessable.
+      this.securityLog.record('auth_rate_limited', {
+        endpoint,
+        requestId: requestIdOf(request),
+        reason: 'rate_limited',
+      });
+
       // Enforcement succeeded and declined. `AuthError` is caught by the accepted authentication
       // filter, which renders the one fixed `429` body used for every exceeded meter, so the body
       // carries no indication of which dimension refused.
@@ -138,6 +163,13 @@ export class AuthAbuseGuard implements CanActivate {
     }
 
     if (!decision.proceeds) {
+      // Stage 2.7. Same reasoning as the denial above: an outage produces one refusal per in-flight
+      // request, so it is recorded in the throttled log rather than as unbounded rows.
+      this.securityLog.record('auth_enforcement_unavailable', {
+        endpoint,
+        requestId: requestIdOf(request),
+        reason: 'redis_unavailable',
+      });
       // Fail closed. Raised before the handler, so no Argon2id runs and no recovery token is issued
       // while enforcement is unconfirmed. `AuthError` is caught by the accepted authentication filter
       // and rendered as the same fixed `503` body used for every other service failure, so the reason

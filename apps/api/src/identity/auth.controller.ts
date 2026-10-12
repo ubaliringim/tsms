@@ -23,6 +23,7 @@ import {
   type SessionCookiePolicy,
 } from './auth-cookie.js';
 import { AuthExceptionFilter } from './auth-exception.filter.js';
+import { requestIdOf } from './security-request-context.js';
 import { TrustedOriginGuard } from './trusted-origin.guard.js';
 import { AbuseProtected, AuthAbuseGuard, abuseDecisionOf } from './auth-abuse.guard.js';
 import { AbuseReservationInterceptor } from './abuse-reservation.interceptor.js';
@@ -105,7 +106,7 @@ export class AuthController {
     this.requireJson(request);
     const input = this.readLoginInput(body);
 
-    const result = await this.auth.login(input.email, input.password);
+    const result = await this.auth.login(input.email, input.password, requestIdOf(request));
 
     response.setHeader(
       'Set-Cookie',
@@ -156,7 +157,7 @@ export class AuthController {
     // is still revoked, and the `204` still describes what actually happened.
     this.refuseIfLimited(request);
     const token = readSessionCookie(request.headers['cookie'], this.cookiePolicy);
-    if (token !== null) await this.auth.logout(token);
+    if (token !== null) await this.auth.logout(token, requestIdOf(request));
     response.setHeader('Set-Cookie', clearSessionCookie(this.cookiePolicy));
   }
 
@@ -174,7 +175,7 @@ export class AuthController {
     this.refuseIfLimited(request);
     this.requireJson(request);
     const { email } = this.readRecoveryRequest(body, ['email']);
-    await this.recovery.requestRecovery(email);
+    await this.recovery.requestRecovery(email, requestIdOf(request));
     return { message: RECOVERY_ACCEPTED_MESSAGE };
   }
 
@@ -192,7 +193,7 @@ export class AuthController {
     this.refuseIfLimited(request);
     this.requireJson(request);
     const { token, newPassword } = this.readRecoveryRequest(body, ['token', 'newPassword']);
-    await this.recovery.resetPassword(token, newPassword);
+    await this.recovery.resetPassword(token, newPassword, requestIdOf(request));
   }
 
   /**

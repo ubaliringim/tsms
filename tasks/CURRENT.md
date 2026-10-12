@@ -1,15 +1,226 @@
-# Current task: Stage 2.6 - Rate Limiting and Abuse Protection (CLOSED)
+# Current task: Stage 2.7 - Security Events & Sanitization (IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING)
 
 Owner: TeamStack Technologies LTD
 
 Stage 0 and Stage 1: ACCEPTED. Stages 2.1 through 2.6: ACCEPTED / HOSTED VERIFIED / CLOSED.
-Stage 2 overall: NOT ACCEPTED. Stage 2.7 - Security Events & Sanitization: NOT STARTED / UNAUTHORIZED.
+**Stage 2.7: IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING.**
+Stage 2 overall: NOT ACCEPTED. Stage 2.8: NOT STARTED / UNAUTHORIZED.
 Production deployment: PROHIBITED.
 
-**Stage 2.6 is closed.** The next planned stage is Stage 2.7 - Security Events & Sanitization. It has not
-been started and is not authorized; nothing in this document authorizes beginning it.
+**Implementation committed; hosted verification pending.** Nothing in this document claims hosted verification until the hosted run is read. Stage 2.7 is **not closed**.
 
-## Closure record
+## Authorization
+
+The owner authorized **Stage 2.7 implementation and local validation only**. Committing, pushing,
+deploying, and Stage 2.8 all remain unauthorized.
+
+## Contract
+
+[docs/security/SECURITY_EVENTS.md](../docs/security/SECURITY_EVENTS.md) is the full specification: event
+taxonomy and exact semantics, transaction boundaries and failure policies, the metadata allowlist,
+event-volume controls, error sanitization, correlation, failure modes, privacy and retention requirements,
+and known limitations.
+
+## Schema
+
+**No schema or migration change.** The accepted Stage 2.1 `AuthenticationEvent` model is reused unchanged.
+Its four writable columns and absent metadata column are what make the privacy allowlist structural rather
+than procedural.
+
+**Escalated for owner decision:** rate-limit denials, Redis unavailability, Argon2id admission refusals, and
+rejected recovery tokens have no representable `AuthenticationEventType`. They are recorded as throttled,
+sanitized log lines instead. Making them queryable alongside events requires an enum migration.
+
+## Events written
+
+| Event                      | Coupling              | Notes                                                                       |
+| -------------------------- | --------------------- | --------------------------------------------------------------------------- |
+| `LOGIN_SUCCEEDED`          | Transaction-coupled   | Written inside the login transaction after the session insert; fail-closed. |
+| `LOGIN_FAILED`             | Detached, best-effort | Never changes the response, preserving the accepted enumeration boundary.   |
+| `LOGOUT`                   | Transaction-coupled   | Only when a live session was actually revoked.                              |
+| `SESSION_REVOKED`          | Transaction-coupled   | One row per session the reset actually revoked.                             |
+| `PASSWORD_RESET_REQUESTED` | Transaction-coupled   | Third statement of the token-issuing batch.                                 |
+| `PASSWORD_RESET_COMPLETED` | Transaction-coupled   | Written on the reset transaction; fail-closed.                              |
+
+`ACCOUNT_DISABLED`, `PASSWORD_CHANGED`, and `EMAIL_VERIFIED` are deliberately unused - each describes an
+action no code performs.
+
+## Volume
+
+The earlier claim that stored events are "inherently bounded" by Stage 2.6 was checked and is only partly
+true. Every login-path row is bounded by the global Argon2id budget (120 / min fleet-wide), because a login
+that writes an event spent a unit of it. **`LOGIN_SUCCEEDED` has no per-account bound**, since successes are
+refunded by design. **`SESSION_REVOKED` fans out** to the user's live session count, which has no cap and a
+7-day lifetime. Logout, refused requests, outages, and denials write no unbounded rows. Log lines are
+throttled to two per key per five-second window **per process**. Full analysis: SECURITY_EVENTS.md section 9.
+
+## Defects found and fixed during this stage
+
+1. **Silent startup abort.** The abuse guard imported `SecurityLog` type-only, so Nest's design metadata
+   recorded `Function`. With `logger: false` and `abortOnError` calling `process.abort()`, the API died
+   with no output at all. Fixed with a value import.
+2. **A false green.** Integration tests ran against a stale `dist` and reported 239 passing while none of
+   the new code was loaded. After rebuilding, real failures appeared. This is a pre-existing property of
+   running the package-level integration command directly.
+3. **Teardown ordering.** Test teardowns deleted users before their event rows, and the accepted
+   `ON DELETE RESTRICT` rejected that - proving the accepted constraint now does real work.
+
+### Found and fixed in the takeover review
+
+4. **`SESSION_REVOKED` double reporting.** The reset counted sessions with a read taken before the update;
+   logout takes no lock, so a session it revoked in between was reported by both. The count now comes from the
+   update itself. A control restoring the old read fails the interleaving test (3 reported, 2 revoked).
+5. **Silent startup abort, still latent.** The first fix only repaired one import. `abortOnError` stayed
+   `true` with logging off, so the next injection mistake would abort silently again. Startup now rejects, and
+   the message is allowlisted so a driver error cannot print a connection secret.
+6. **A second `SecurityLog` in the exception filter**, so the documented throttle bound was not shared.
+7. **A disabled-during-login refusal wrote no `LOGIN_FAILED`**, and a token rejected inside the reset
+   transaction was not logged.
+8. **`PASSWORD_RESET_REQUESTED` bypassed the sanitising row builder**, while the specification said it did not.
+9. **A stale-`dist` hazard with no guard**, and two orphaned compiled files. A global setup now refuses stale,
+   missing, or orphaned output in both vitest configs.
+10. **Test leaks and vacuous assertions.** The accepted `rate-limit-concurrency` suite never removed its users;
+    null-user events matched no cleanup; several assertions were satisfied by any row in the table.
+
+## Negative controls
+
+Each was run, observed to fail, then reverted and re-verified.
+
+| Control                                             | Result                                                       |
+| --------------------------------------------------- | ------------------------------------------------------------ |
+| `LOGIN_SUCCEEDED` moved out of its transaction      | Coupling test fails; login succeeded with no audit record.   |
+| `SESSION_REVOKED` counted by a pre-read             | Interleaving test fails: 3 reported, 2 revoked.              |
+| Log allowlist turned into a pass-through            | 3 sanitisation tests fail.                                   |
+| Guard's `SecurityLog` import made type-only         | 2 DI tests fail; a real boot rejects with a legible message. |
+| `src` edited, vitest run directly without a rebuild | Both configs refuse to start and say how to rebuild.         |
+
+An earlier coupling test rolled back _before_ the event write and passed under the first control; it was
+replaced by one that fails the audit write itself.
+
+## Local validation (Claude Code takeover, 2026-10-11)
+
+| Gate                             | Result                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile` | PASS; lockfile unchanged                                                                 |
+| `pnpm db:generate`               | PASS                                                                                     |
+| `pnpm format:check` / `lint`     | PASS / PASS                                                                              |
+| `pnpm typecheck`                 | PASS (12 tasks)                                                                          |
+| `pnpm test`                      | PASS - **292**: config 37, redis 4, database 17, worker 4, **api 229**, toolchain 1      |
+| `pnpm build` / `pnpm check`      | PASS / PASS                                                                              |
+| `pnpm test:integration`          | PASS - **382**: redis 66, database 35, **api 281**; none skipped; 0 pending migrations   |
+| `pnpm smoke`                     | PASS - 22 assertions                                                                     |
+| `pnpm mobile:check` / `export`   | PASS / PASS (Android, 578 modules)                                                       |
+| `git diff --check`               | PASS                                                                                     |
+| `pnpm audit --audit-level=high`  | **EXPECTED FAIL**: exactly node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm |
+
+The integration run used a freshly rebuilt `dist` and the stale-build guard was active. Hosted CI: **not run**.
+The `tsms_test` row counts were identical before and after the run (581 users, 572 events, 0 orphan events).
+
+## Final design review - 2026-10-11
+
+Owner decisions: log-only for rate-limit, Redis, Argon2id and rejected-token outcomes **approved**;
+migration, per-user session cap, aggregate `SESSION_REVOKED` row, deleting test rows, and removing
+`apps/api/probe.txt` **not approved**; commit, push, deployment and Stage 2.8 **not authorised**.
+
+- **`SESSION_REVOKED`** is one truthful row per session a reset revoked. The original per-row write failed
+  closed at about 20,000 live sessions (Prisma `P2028`); **it is now corrected by one set-based statement**
+  (see the fan-out correction below). Semantics, schema and taxonomy are unchanged.
+- **Detached `LOGIN_FAILED`**: `detached` could reject on an invalid event type (row built outside its `try`).
+  Fixed; five new unit tests, two of which fail on the old code (control run).
+- **Stale-build guard**: messages now use forward slashes on every platform; two tests added. Linux CI not run.
+- **Logging**: one shared `SecurityLog`; log lines are documented as non-durable and not audit events;
+  production needs retention, centralised collection, restricted access and alerting (15.5).
+- **Test database**: the 581 historical users were not touched. One failed run under load left **one user and
+  six events**; a scoped delete was declined, so `tsms_test` holds 582 users and 578 events.
+
+### Final validation (this review)
+
+`install --frozen-lockfile`, `db:generate`, `format:check`, `lint`, `typecheck`, `build`, `check`: PASS.
+`pnpm test`: **292** (api 229, up from 222). `pnpm test:integration`: **375** (redis 66, database 35, api 274) before the fan-out correction,
+none skipped; **one earlier run in this review failed** (a 30 s timeout in `rate-limit-hardening` under load,
+passing 3 of 3 in isolation and on the full rerun). `pnpm smoke`: 22. `mobile:check`/`export`: PASS, 578
+modules. `git diff --check`: PASS. `pnpm audit --audit-level=high`: expected fail, exactly the two accepted
+advisories. Hosted CI: not run.
+
+## Fan-out correction - 2026-10-12
+
+Owner authorised a narrow correction for the `SESSION_REVOKED` fan-out and the test-lifecycle defects.
+Implementation and local validation, now committed for hosted verification; **not deployed**.
+
+- **Root cause:** one event row per session, written from the application inside Prisma's 5 s interactive
+  transaction, so a reset failed closed (`P2028`) above about 20,000 live sessions.
+- **Correction:** `SecurityEventRecorder.revokeLiveSessionsRecordingEvents`: one statement,
+  `UPDATE ... RETURNING` feeding `INSERT ... SELECT`, on the reset transaction. Exactly one event per session
+  that statement revoked; no pre-read; fail-closed; no schema change.
+- **UUIDv7:** PostgreSQL 17.11 has no `uuidv7()`. The id is built in SQL to RFC 9562 (millisecond timestamp,
+  version 7, RFC variant, `gen_random_uuid()` randomness; PostgreSQL 13+). Verified by tests; swapping in a v4
+  fails the test.
+- **Benchmarks (3 trials to 50,000, 2 above):** ok through 100,000 live sessions (median 0.33 s at 1,000,
+  1.2 s at 20,000, 4.2 s at 50,000, 3.9 s at 100,000); fails at 150,000. Marginal from 50,000. The accepted
+  revoke-only baseline fails between 100,000 and 200,000. Memory growth at most 1.8 MiB.
+- **Tests:** 7 new integration tests plus 2 replaced (35 to 42): UUIDv7 ids and exact timestamp, 25,000-session
+  fan-out, reset vs a revocation interleaved before the statement, **reset vs a real logout holding the row
+  (synchronised on a database lock wait, not a sleep)**, rollback when the set-based statement fails, rollback
+  of an already-run revocation when the completion event fails, concurrent resets, no event for revoked or
+  expired sessions, other users untouched. **Controls:** reverting to pre-read counting fails three tests;
+  a UUIDv4 fails one.
+- **Test lifecycle:** `settleRequests()` (setup file `track-requests.mjs`) refuses new requests and waits for
+  in-flight ones before any teardown deletes rows, closing the leak that left a user and six events.
+- **30 s timeout:** not reproduced in 14 further runs (3.6 to 5.2 s); observed twice only on the first run after
+  heavy activity, with 1.0 of 15.8 GiB host memory free. Probable host contention, **unproven**. No timeout raised.
+- **Remaining:** a reset is still one transaction and still fails closed near 100,000+ live sessions; no
+  session cap (not approved). Details: SECURITY_EVENTS.md section 16.
+- The historical 581 users, the residual user with six events, and `apps/api/probe.txt` were **not** touched.
+
+### Validation after the correction (2026-10-12)
+
+`install --frozen-lockfile`, `db:generate`, `format:check`, `lint`, `typecheck`, `build`, `check`: PASS.
+`pnpm test`: **292** (config 37, redis 4, database 17, worker 4, api 229, toolchain 1; unchanged).
+`pnpm test:integration`: **382** (redis 66, database 35, **api 281**), none skipped, passing on the first full
+run after the correction (the earlier stalls were before it). `pnpm smoke`: 22. `mobile:check`/`export`: PASS,
+578 modules. `git diff --check`: PASS. `pnpm audit --audit-level=high`: expected fail, exactly node-forge
+GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm. Hosted CI: not run. `tsms_test` counts unchanged at 582
+users, 578 events.
+
+### Unresolved risks preserved at the implementation commit
+
+The owner accepted Stage 2.7 locally for an implementation commit and hosted verification. The following are
+**not resolved**, and the first is accepted only provisionally for development, **not for production
+readiness**:
+
+1. **Password reset still fails closed at sufficiently large live-session counts.** A reset is one
+   transaction under Prisma's 5 s default. On the reference machine it succeeded through 100,000 sessions and
+   failed at 150,000, with a marginal region from 50,000. **The 100,000-session measurement is an observation
+   on one machine, not a production guarantee.** No per-user session cap exists.
+2. **`SESSION_REVOKED` still writes one event row per revoked session.**
+3. **`LOGIN_SUCCEEDED` has no per-account event-volume bound**, only the global Argon2id budget.
+4. **Structured security logs are non-durable and throttled per process**, and are not audit events.
+5. **Log retention, centralised collection, access control and alerting** are production prerequisites that
+   this stage does not provide.
+6. **Event-table retention and read access are undefined**; no event read API exists.
+7. **Test timing varies under host memory pressure.** A 30 s `rate-limit-hardening` timeout was observed twice
+   and not reproduced in 14 later runs; the cause is attributed, unproven, to host contention.
+8. **Stage 2.6 limitations remain:** Redis as a hard dependency, no approved trusted-proxy model, HMAC secret
+   provisioning and rotation, provisional rate-limit thresholds, lease-expiry over-admission, lost refunds,
+   untested Redis Cluster, and no production email provider.
+9. **Both dependency advisories remain open and unsuppressed:** node-forge `GHSA-86w9-cpqp-85rv` and braces
+   `GHSA-vfj7-8cjw-p6xm`. The `security-audit` job is expected to fail on exactly these two.
+10. Historical test-database rows (581 users, plus one residual user with six events) were intentionally not
+    deleted. `apps/api/probe.txt` is an unexplained untracked file and is excluded from the commit.
+
+## Remaining risks
+
+Rate-limit, outage, and Argon2id outcomes are not queryable in the event table · log throttle state is per
+process · log lines are not durable · **`SESSION_REVOKED` fan-out has no per-user session cap** ·
+**`LOGIN_SUCCEEDED` is bounded only by the global Argon2id budget** · no event read API · retention
+undefined · `LOGIN_FAILED` reveals account existence to table readers, so access control is undefined · no
+alerting · all Stage 2.6 limitations persist. **Not production readiness; production deployment remains prohibited.**
+
+Both advisories remain **OPEN**: `node-forge` GHSA-86w9-cpqp-85rv and `braces` GHSA-vfj7-8cjw-p6xm.
+
+## Historical record: Stage 2.6 closure
+
+### Stage 2.6 - Rate Limiting and Abuse Protection - CLOSED
 
 Implementation commit `ca66284fb479a00a2c235ae6e18fa3ec7929b98e`
 (`feat: add distributed authentication abuse protection`).
@@ -39,7 +250,7 @@ fails on the two already accepted advisories, which the owner has directed must 
 downgraded, or marked fixed. The `validate` gate - install, generation, check, integration, mobile, and
 smoke - passed.
 
-## What was delivered
+### What Stage 2.6 delivered
 
 - **Atomic multi-dimensional Redis rate limiting.** One Lua script evaluates every dimension of a request
   as a token bucket inside a single indivisible step, so a request is admitted only when every dimension has
@@ -64,7 +275,7 @@ smoke - passed.
 - **Privacy-preserving keys.** Every key is a 32-character HMAC-SHA256 digest in the `{tsms-rl}` namespace. No
   raw credential, address, or Argon2id hash ever reaches Redis.
 
-## Preserved historical evidence
+### Preserved concurrent-bypass evidence
 
 An owner-commissioned review found that the original failure-metered design was a **real concurrent
 bypass**, not the "bounded by in-flight concurrency" limitation it had been documented as. Admission was a
@@ -85,33 +296,16 @@ distributed. After the fix the same probe admits exactly the allowance.
 A negative control confirmed the refund clamp is genuinely tested: removing the ceiling made buckets inflate
 to 8 and 12 tokens against a capacity of 5. The source was restored and re-verified clean.
 
-## Remaining unresolved risks
+### Stage 2.6 limitations, still open
 
-These are **not** resolved by this closure, and none of them may be treated as accepted for production use:
-
-- **Lease-expiry over-admission.** A lease that expires while its work is still running permits
-  over-admission, bounded by the number of such holders rather than by request volume. The semaphore bounds
-  valid leases; it is **not** an unconditional maximum of 8 physically running Argon2id operations.
-- **Redis is now a hard dependency** for login, password recovery, and password reset. Redis unavailability
-  makes those endpoints unavailable.
-- **Lost refunds.** A refund that cannot be written is lost rather than queued or retried, which can
-  under-charge a subject.
-- **No approved trusted proxy model.** A TLS-terminating shared proxy collapses every client onto one
-  transport peer and therefore one source bucket. **Production use behind such a proxy is blocked** pending an
-  architecture review.
-- **HMAC secret provisioning and rotation.** A per-instance value produces disjoint key spaces and silently
-  turns a distributed limit into a per-instance one. Rotation resets every active window and fails open for
-  up to one window. No production secret is committed.
-- **Provisional thresholds.** Development rate-limit thresholds are provisional; production tuning is
-  deferred.
-- **Redis Cluster untested.** The hash tag keeps every multi-key script in one slot, but no Cluster instance
-  has been exercised.
-- **Production email delivery is not configured.** Password recovery still runs in its non-delivering mode.
-
-**Both dependency advisories remain OPEN and unresolved:** `node-forge` `GHSA-86w9-cpqp-85rv` and `braces`
-`GHSA-vfj7-8cjw-p6xm`. Acceptance of this stage resolves neither.
-
-**This stage is not production readiness. Production deployment remains prohibited.**
+- **Lease-expiry over-admission.** The semaphore bounds valid leases; it is **not** an unconditional maximum
+  of 8 physically running Argon2id operations.
+- **Redis is a hard dependency** for login, password recovery, and password reset.
+- **Lost refunds** can under-charge a subject.
+- **No approved trusted proxy model.** Production use behind a shared TLS-terminating proxy is blocked.
+- **HMAC secret provisioning and rotation.** A per-instance value turns a distributed limit into a
+  per-instance one; rotation resets every active window and fails open for up to one window.
+- **Provisional thresholds**; **Redis Cluster untested**; **production email delivery not configured**.
 
 ## Historical authorization record
 
@@ -560,11 +754,13 @@ platform follow-up is preserved unchanged, as is the resolved Prisma generation 
 
 ## Git status
 
-Branch `main`. Stage 2.6 implementation was committed as
-`ca66284fb479a00a2c235ae6e18fa3ec7929b98e` and pushed to origin/main, and was verified by hosted run
-`38123962717`. Closure is recorded by this documentation-only commit. No implementation change, no amend, no
-force-push, and **no deployment** has occurred at any point.
+Branch `main`, baseline `8442769f4642a3d0dad9735ecb8d7db0628a8479` matching origin/main.
 
-Exact next action: await separate owner authorization for **Stage 2.7 - Security Events & Sanitization**.
+Stage 2.7 is **locally validated and committed as one implementation commit** (`feat: add authentication security
+events and sanitization`), pushed to origin/main for hosted verification. The untracked `apps/api/probe.txt` is
+excluded. No hosted result is recorded here, and **no deployment** has occurred at any point in this stage.
 
-**HARD STOP: no deployment, and no Stage 2.7 without explicit owner authorization.**
+Exact next action: read the hosted run for the implementation commit, then await the owner's documentation-closure
+decision. Do not create the closure commit, deploy, or begin Stage 2.8 without explicit authorization.
+
+**HARD STOP: no documentation-closure commit, no deployment, and no Stage 2.8 without explicit owner authorization.**

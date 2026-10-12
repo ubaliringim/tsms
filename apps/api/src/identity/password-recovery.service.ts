@@ -16,6 +16,8 @@ import {
   type RecoveryInstructions,
 } from './password-recovery-delivery.js';
 import { lockUserSessionMutations } from './user-session-lock.js';
+import { securityEventRow, type SecurityEventRecorder } from './security-event-recorder.js';
+import type { SecurityLog } from './security-log.js';
 import {
   Argon2idAdmissionService,
   Argon2idAdmissionRefused,
@@ -69,6 +71,12 @@ export class PasswordRecoveryService {
      * simultaneous Argon2id work. Every such call below goes through it.
      */
     private readonly argon2id: Argon2idAdmissionService,
+    /**
+     * Stage 2.7. Required, not optional: a recovery service without an event recorder would issue
+     * tokens and change passwords with no audit trail, and would look exactly like one that is quiet.
+     */
+    private readonly events: SecurityEventRecorder,
+    private readonly securityLog: SecurityLog,
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
@@ -84,7 +92,7 @@ export class PasswordRecoveryService {
    * them. Only an operational failure of the service itself surfaces, and it surfaces as the same
    * closed response the disabled mode uses, so it cannot become an oracle either.
    */
-  async requestRecovery(email: unknown): Promise<void> {
+  async requestRecovery(email: unknown, requestId?: string): Promise<void> {
     // Stage 2.6 hardening. The eligibility decision is made first, because it decides whether any
     // Argon2id happens at all; only the ineligible branches take a slot. A slot is not reserved for an
     // eligible request, so a legitimate recovery never competes for verification capacity.
@@ -94,7 +102,10 @@ export class PasswordRecoveryService {
     if (!resolved.eligible) {
       // Not a candidate address, unknown, disabled, or no credential. Each of these pays a real
       // verification so none is distinguishable by duration alone.
-      await this.guarded(() => this.burnVerification());
+      await this.guarded(() => this.burnVerification(), 'forgot', requestId);
+      // Stage 2.7. No event on this branch, and that is load-bearing rather than an omission: recording
+      // anything here would turn "we issued a token" into a readable difference between eligible and
+      // ineligible requests. Eligibility is observable only through the delivery inbox, as it must be.
       return;
     }
     const { user } = resolved;
@@ -108,6 +119,9 @@ export class PasswordRecoveryService {
     try {
       // Issuing supersedes every earlier outstanding token for this user, so only the newest link
       // works and an attacker cannot accumulate valid links.
+      //
+      // Stage 2.7. The event is the third statement in this batch, so the token and its audit record
+      // commit together. A recovery request that rolls back leaves no row claiming a token was issued.
       await this.database.$transaction([
         this.database.passwordResetToken.updateMany({
           where: { userId: user.id, usedAt: null },
@@ -115,6 +129,16 @@ export class PasswordRecoveryService {
         }),
         this.database.passwordResetToken.create({
           data: { userId: user.id, tokenHash, createdAt: issuedAt, expiresAt },
+          select: { id: true },
+        }),
+        // Built by the recorder's own row function, so this write passes the same closed-vocabulary and
+        // UUID checks as every other event even though it has to be a batch member.
+        this.database.authenticationEvent.create({
+          data: securityEventRow({
+            eventType: 'PASSWORD_RESET_REQUESTED',
+            userId: user.id,
+            requestId,
+          }),
           select: { id: true },
         }),
       ]);
@@ -183,15 +207,24 @@ export class PasswordRecoveryService {
    * Every unusable token - unknown, expired, consumed, superseded, or malformed - raises the same
    * generic failure. A successful reset does not create a session.
    */
-  async resetPassword(token: unknown, newPassword: unknown): Promise<void> {
-    if (!isRecoveryToken(token)) throw new AuthError('RECOVERY_TOKEN_INVALID');
+  async resetPassword(token: unknown, newPassword: unknown, requestId?: string): Promise<void> {
+    if (!isRecoveryToken(token)) {
+      this.recordTokenRejection(requestId);
+      throw new AuthError('RECOVERY_TOKEN_INVALID');
+    }
     const tokenHash = hashRecoveryToken(token);
-    if (tokenHash === null) throw new AuthError('RECOVERY_TOKEN_INVALID');
+    if (tokenHash === null) {
+      this.recordTokenRejection(requestId);
+      throw new AuthError('RECOVERY_TOKEN_INVALID');
+    }
 
     // Validate the token before the password, so a policy rejection can never disclose token
     // validity and a policy error can never disclose account existence.
     const claimed = await this.claimToken(tokenHash);
-    if (claimed === null) throw new AuthError('RECOVERY_TOKEN_INVALID');
+    if (claimed === null) {
+      this.recordTokenRejection(requestId);
+      throw new AuthError('RECOVERY_TOKEN_INVALID');
+    }
 
     // Hash outside the transaction: the transaction must never hold a connection across a 64 MiB
     // allocation. Nothing is written yet, so losing the race after this point is harmless.
@@ -201,7 +234,7 @@ export class PasswordRecoveryService {
     // the accepted property that no connection is ever held across an allocation.
     let passwordHash: string;
     try {
-      passwordHash = await this.guarded(() => hashPassword(newPassword));
+      passwordHash = await this.guarded(() => hashPassword(newPassword), 'reset', requestId);
     } catch (error) {
       // An admission refusal is an operational outcome and must not be reported as a policy violation:
       // the two are distinguishable to the client, and conflating them would both mislead the user and
@@ -269,17 +302,49 @@ export class PasswordRecoveryService {
           data: { usedAt: this.now() },
         });
 
-        // Revoke every live session. Inside the same transaction as the credential change, so a
-        // reset reliably evicts sessions that existed when it committed.
-        await tx.session.updateMany({
-          where: { userId: claimed.userId, revokedAt: null, expiresAt: { gt: this.now() } },
-          data: { revokedAt: this.now() },
+        // Revoke every live session and record one `SESSION_REVOKED` per session revoked, in one
+        // set-based statement on this transaction. See `revokeLiveSessionsRecordingEvents` for why the
+        // events are derived from the update's own rows and why no count is read beforehand.
+        await this.events.revokeLiveSessionsRecordingEvents(tx, {
+          userId: claimed.userId,
+          revokedAt: this.now(),
+          requestId,
+        });
+
+        // Stage 2.7. Written on the transaction that performed the change, so `PASSWORD_RESET_COMPLETED`
+        // cannot survive a rollback and cannot exist without the credential replacement it describes.
+        await this.events.inTransaction(tx, {
+          eventType: 'PASSWORD_RESET_COMPLETED',
+          userId: claimed.userId,
+          requestId,
         });
       });
     } catch (error) {
-      if (error instanceof AuthError) throw error;
+      if (error instanceof AuthError) {
+        // The token was claimable a moment ago and lost the race, or its owner was disabled meanwhile.
+        if (error.code === 'RECOVERY_TOKEN_INVALID') this.recordTokenRejection(requestId);
+        throw error;
+      }
       throw new AuthError('SERVICE_FAILURE');
     }
+  }
+
+  /**
+   * Note a rejected recovery token in the operational security log.
+   *
+   * Deliberately not an `AuthenticationEvent`. An unknown token has no user to attribute it to, so the
+   * row would carry `userId = null` and say nothing; worse, an attacker can present a different bogus
+   * token every time, and the per-token rate meter would not bound the total. A log line with no
+   * identifying field is both smaller and genuinely useful.
+   *
+   * The token itself is never passed to the log: the log has no field that could hold one.
+   */
+  private recordTokenRejection(requestId?: string): void {
+    this.securityLog.record('recovery_token_rejected', {
+      endpoint: 'reset',
+      requestId,
+      reason: 'token_rejected',
+    });
   }
 
   /**
@@ -319,11 +384,22 @@ export class PasswordRecoveryService {
    * proceed. It surfaces as `SERVICE_FAILURE`, which is both sanitized and indistinguishable from any
    * other operational failure - and it is raised before any allocation, so no work was half-done.
    */
-  private async guarded<T>(work: () => Promise<T>): Promise<T> {
+  private async guarded<T>(
+    work: () => Promise<T>,
+    endpoint: string,
+    requestId?: string,
+  ): Promise<T> {
     try {
       return await withArgon2idSlot(this.argon2id, work);
     } catch (error) {
-      if (error instanceof Argon2idAdmissionRefused) throw new AuthError('SERVICE_FAILURE');
+      if (error instanceof Argon2idAdmissionRefused) {
+        this.securityLog.record('argon2id_admission_refused', {
+          endpoint,
+          requestId,
+          reason: 'argon2id_unavailable',
+        });
+        throw new AuthError('SERVICE_FAILURE');
+      }
       throw error;
     }
   }

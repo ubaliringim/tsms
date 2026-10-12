@@ -3,6 +3,8 @@ import { BaseExceptionFilter } from '@nestjs/core';
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import type { HttpServer } from '@nestjs/common';
 import { AuthError, type AuthErrorCode } from './auth.service.js';
+import type { SecurityLog } from './security-log.js';
+import { requestIdOf } from './security-request-context.js';
 
 /**
  * Minimal structural view of the platform response.
@@ -79,7 +81,10 @@ export class AuthExceptionFilter implements ExceptionFilter<AuthError> {
  */
 @Catch()
 export class SafeHttpExceptionFilter extends BaseExceptionFilter implements ExceptionFilter {
-  constructor(applicationRef: HttpServer) {
+  constructor(
+    applicationRef: HttpServer,
+    private readonly securityLog?: SecurityLog,
+  ) {
     super(applicationRef);
   }
 
@@ -111,6 +116,37 @@ export class SafeHttpExceptionFilter extends BaseExceptionFilter implements Exce
       return;
     }
 
-    super.catch(exception, host);
+    // Stage 2.7. An `HttpException` is answered by the framework filter. Every one in this codebase is
+    // constructed with a hand-written, fixed body - the origin refusal, the readiness body, the accepted
+    // `429` and `503` - so delegating preserves the accepted public contract exactly.
+    if (exception instanceof HttpException) {
+      super.catch(exception, host);
+      return;
+    }
+
+    // Anything else is an unexpected failure, and this branch replaces the framework default for two
+    // reasons.
+    //
+    // First, safety. The framework's `handleUnknownError` echoes `exception.message` for any thrown value
+    // shaped like an HTTP error - an object with a string `message` and a numeric `statusCode` in
+    // `[400, 600)`. That is a latent disclosure path: a future change that throws such an object, or a
+    // driver error that adopts that shape, would put its own message in the response. The body below is
+    // a constant and cannot vary with the cause.
+    //
+    // Second, observability. The framework also logs the raw exception object - which is a no-op here
+    // because Nest's logger is disabled - so an unexpected failure currently produces no record at all.
+    // Recording it sanitised restores the diagnostic without reintroducing the leak.
+    this.securityLog?.record('unhandled_request_error', {
+      reason: 'unhandled_error',
+      requestId: requestIdOf(host.switchToHttp().getRequest()),
+    });
+
+    const response = host.switchToHttp().getResponse<PlatformResponse>();
+    // `BaseExceptionFilter` checks `isHeadersSent` before replying; the public shape below is identical
+    // to what it produced, so no accepted response contract changes.
+    response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: 'Internal server error',
+    });
   }
 }

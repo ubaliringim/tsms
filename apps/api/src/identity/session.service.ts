@@ -114,15 +114,30 @@ export class SessionService {
   }
 
   async revokeSession(sessionId: unknown, expectedUserId: unknown) {
+    return this.revokeSessionInTransaction(this.database, sessionId, expectedUserId);
+  }
+
+  /**
+   * Revoke one session on a caller-supplied transaction.
+   *
+   * Stage 2.7. Exists so logout can revoke the session and record its security event on one transaction,
+   * which is what guarantees a `LOGOUT` row never outlives the revocation it describes. Mirrors
+   * `createSessionInTransaction`: the caller owns the transaction and therefore owns the commit.
+   */
+  async revokeSessionInTransaction(
+    client: Pick<PrismaClient, 'session'>,
+    sessionId: unknown,
+    expectedUserId: unknown,
+  ) {
     requireId(sessionId);
     requireId(expectedUserId);
     try {
-      const result = await this.database.session.updateMany({
+      const result = await client.session.updateMany({
         where: { id: sessionId, userId: expectedUserId, revokedAt: null },
         data: { revokedAt: this.now() },
       });
       if (result.count === 1) return { revoked: true };
-      const owned = await this.database.session.findFirst({
+      const owned = await client.session.findFirst({
         where: { id: sessionId, userId: expectedUserId },
         select: { id: true },
       });

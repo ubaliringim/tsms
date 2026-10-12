@@ -16,8 +16,8 @@ Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Next substage: **2.7 - Security Events & Sanitization.** NOT STARTED / UNAUTHORIZED. Stage 2.6 is now
-ACCEPTED / HOSTED VERIFIED / CLOSED.
+Next substage: **Stage 2.7 - Security Events & Sanitization** is in progress (locally validated, under
+owner review). **Stage 2.8: NOT STARTED / UNAUTHORIZED.**
 
 Accepted capabilities: PostgreSQL local infrastructure, Redis local infrastructure, pgvector extension foundation, Prisma 7 database foundation, packages/database, packages/redis, migration workflow, database and Redis lifecycle handling, API and worker liveness/readiness separation, integration-test infrastructure, test-database safety controls, Docker Compose workflow, fresh-state reproducibility, the Stage 1 CI workflow, the three Prisma dependency security remediations, the temporary InfrastructureProbe scaffolding, and the smoke-test readiness extensions. The Stage 1 known issues were reviewed and accepted as non-blocking.
 
@@ -45,13 +45,20 @@ Stage 2.4 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-0
 
 Stage 2.5 status: ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-08). Implementation commit `e2bb3b79aa774b64e155b273b35af6dd17a47242` (`feat: add secure password recovery`); hosted run [37859811782](https://github.com/ubaliringim/tsms/actions/runs/37859811782). Record at tasks/CURRENT.md and docs/security/PASSWORD_RECOVERY.md.
 
-Stage 2.6 status: **ACCEPTED / HOSTED VERIFIED / CLOSED** (owner decision, 2026-10-11). Implementation commit `ca66284fb479a00a2c235ae6e18fa3ec7929b98e` (`feat: add distributed authentication abuse protection`); hosted run [38123962717](https://github.com/ubaliringim/tsms/actions/runs/38123962717): `validate` = **success** (245 unit/toolchain tests, 340 integration tests, 22 smoke assertions, 3 migrations applied with 0 pending, Android export of 578 modules, no unexpected failures), `security-audit` = **expected failure on exactly the two accepted advisories**, overall workflow = **RED and not reported as green**. **Not deployed.** Record at tasks/CURRENT.md and docs/security/RATE_LIMITING.md.
+Stage 2.6 status: **ACCEPTED / HOSTED VERIFIED / CLOSED** (owner decision, 2026-10-11). Implementation commit `ca66284fb479a00a2c235ae6e18fa3ec7929b98e`; hosted run [38123962717](https://github.com/ubaliringim/tsms/actions/runs/38123962717): `validate` = **success** (245 unit/toolchain, 340 integration, 22 smoke, 3 migrations, 578 modules), `security-audit` = **expected failure on the two accepted advisories**, overall **RED**. **Not deployed.** Record at tasks/CURRENT.md and docs/security/RATE_LIMITING.md.
 
-Stage 2 overall: NOT ACCEPTED. Stage 2.7 - Security Events & Sanitization: NOT STARTED / UNAUTHORIZED.
+Stage 2.7 status: **IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING.** Authentication security events and
+sanitization are implemented, pass full local validation, and are committed for hosted verification.
+**Hosted result pending; not closed; not deployed.** The accepted Stage 2.1 `AuthenticationEvent` schema is reused unchanged. Record at
+tasks/CURRENT.md and docs/security/SECURITY_EVENTS.md.
 
-Exact next action: await separate owner authorization for Stage 2.7 - Security Events & Sanitization. Nothing may be deployed or started without explicit authorization. The Stage 2.6 limitations recorded below remain open; acceptance of the stage is not production readiness.
+Stage 2 overall: NOT ACCEPTED. Stage 2.8: NOT STARTED / UNAUTHORIZED.
 
-DO NOT: start Stage 2.7 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken or suppress audits, amend, force-push, or deploy without explicit authorization.
+Exact next action: owner review of the `SESSION_REVOKED` fan-out correction (a reset still fails closed near
+100,000+ live sessions, with no per-user cap) and decisions on production log retention, collection, access and
+alerting. Nothing may be committed, pushed, or deployed without explicit authorization.
+
+DO NOT: start Stage 2.8 or later, commit or push Stage 2.7, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken or suppress audits, amend, force-push, or deploy without explicit authorization.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -501,7 +508,58 @@ decision.
 
 Stage 2.5 remains ACCEPTED / HOSTED VERIFIED / CLOSED and its closure history is unchanged. Stage 2
 overall remains NOT ACCEPTED. Stage 2.6 is ACCEPTED / HOSTED VERIFIED / CLOSED.
-Stage 2.7 - Security Events & Sanitization remains NOT STARTED / UNAUTHORIZED.
+Stage 2.7 is IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING. Stage 2.8 remains NOT STARTED / UNAUTHORIZED.
+
+## Stage 2.7 - Security Events & Sanitization - 2026-10-11
+
+**Status: IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING.** **Hosted result pending, not closed,
+not deployed.** No schema or migration change: the accepted Stage 2.1 `AuthenticationEvent` model is reused
+unchanged.
+
+Authentication outcomes now produce accurate, privacy-minimised security events. Success events are written
+on the same transaction as the operation they describe, so a committed success event always corresponds to a
+committed operation; failure events are best-effort so a lost audit row can never change a response and
+create an enumeration oracle. Denial, outage, and Argon2id-refusal outcomes have no representable event
+type and are recorded instead as throttled, sanitised log lines, which bounds event volume to what the
+Stage 2.6 abuse limiter already permits.
+
+Design, taxonomy, transaction boundaries, volume controls, and limitations are specified in
+[docs/security/SECURITY_EVENTS.md](docs/security/SECURITY_EVENTS.md).
+
+**Escalated for owner decision.** Rate-limit denials, Redis unavailability, Argon2id admission refusals, and
+rejected recovery tokens are not queryable in the event table. Making them first-class events requires
+extending `AuthenticationEventType`, which is a migration and therefore needs separate authorization.
+
+**Three defects were found and fixed while implementing this stage**, including an API startup abort caused
+by a type-only import of a constructor-injected dependency, which was silent because Nest logging is
+disabled. A negative control confirmed the transaction-coupling test genuinely detects a decoupled write;
+an earlier version of that test passed under the same control and was replaced because it proved nothing.
+
+**A takeover review (Claude Code, 2026-10-11) found and fixed further defects:** `SESSION_REVOKED` was
+double-reported when a logout raced a reset; `abortOnError` still hid every future startup failure; the
+exception filter held a second log instance; two refusal paths wrote no record; `dist` could be stale with no
+guard; and one accepted suite never cleaned up its users. Event volume was re-analysed: `LOGIN_SUCCEEDED` is
+bounded only by the global Argon2id budget and `SESSION_REVOKED` fans out to an uncapped session count.
+Local validation was re-run to completion: 292 unit/toolchain, 375 integration (api 274, since 382 with api 281), 22 smoke, audit
+failing on exactly the two accepted advisories. 581 historical synthetic rows remain in `tsms_test` (deletion
+not approved), plus one user and six events left by a failed run.
+
+**Final design review (2026-10-11).** Owner approved log-only handling for rate-limit, Redis, Argon2id and
+rejected-token outcomes; a migration, a session cap, an aggregate revocation row, deleting test rows and
+removing `apps/api/probe.txt` were not approved. `SESSION_REVOKED` is one truthful row per revoked session and
+was measured: the original per-row write failed closed at 20,000 live sessions (Prisma 5 s transaction
+timeout). The detached `LOGIN_FAILED` write was hardened so it cannot reject. Log lines are documented as
+non-durable, not audit events.
+
+**Fan-out correction (2026-10-12).** The owner authorised a narrow correction. `SESSION_REVOKED` is now
+written by one set-based statement (`UPDATE ... RETURNING` into `INSERT ... SELECT`) on the reset transaction,
+exactly one row per session that statement revoked, with a UUIDv7 built in SQL because PostgreSQL 17 has no
+`uuidv7()`. No schema change, no session cap, no change of event meaning. Benchmarks on the reference machine:
+success through 100,000 live sessions (marginal from 50,000), failure at 150,000; the accepted revoke-only
+baseline fails between 100,000 and 200,000. A test-lifecycle defect (requests outliving a timed-out test and
+writing events after teardown) was fixed with a settle-before-teardown guard. An intermittent 30 s timeout was
+not reproduced and is attributed, unproven, to host memory pressure. Integration is now 382 (api 281), unit 292.
+A reset is still one transaction and still fails closed near 100,000+ live sessions. Stage 2.7 is IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING (not closed).
 
 ## Stage 2.6 - Rate limiting and abuse protection - 2026-10-09
 
