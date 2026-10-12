@@ -161,6 +161,9 @@ response to credentialed `fetch` at all. The Stage 2.4 contract is therefore sam
 web and control applications run on different ports during local development, so wiring them to
 the API requires a later, explicit credentialed allowlist decision that this stage does not make.
 
+Stage 2.8 keeps this contract unchanged: the web application reaches these routes through a same-origin
+proxy rather than through CORS. See [WEB_AUTHENTICATION.md](WEB_AUTHENTICATION.md).
+
 Residual risk and the intended direction are recorded under **Residual risk**.
 
 ## Enumeration and timing resistance

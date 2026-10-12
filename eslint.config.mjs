@@ -36,6 +36,21 @@ export default [
       },
     },
   },
+  {
+    // Playwright serialises these callbacks into the browser page (`page.evaluate`), so they run with
+    // browser globals even though the file itself runs in Node.
+    files: ['apps/web/e2e/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        getComputedStyle: 'readonly',
+        PageTransitionEvent: 'readonly',
+      },
+    },
+  },
   { files: ['apps/web/**/*.{ts,tsx}'], settings: { next: { rootDir: 'apps/web/' } } },
   { files: ['apps/control/**/*.{ts,tsx}'], settings: { next: { rootDir: 'apps/control/' } } },
 ];

@@ -1,14 +1,112 @@
-# Current task: Stage 2.7 - Security Events & Sanitization (ACCEPTED / HOSTED VERIFIED / CLOSED)
+# Current task: Stage 2.8 - Minimal Web Authentication Integration (IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING)
 
 Owner: TeamStack Technologies LTD
 
-Stage 0 and Stage 1: ACCEPTED. Stages 2.1 through 2.6: ACCEPTED / HOSTED VERIFIED / CLOSED.
-**Stage 2.7: ACCEPTED / HOSTED VERIFIED / CLOSED.**
-Stage 2 overall: NOT ACCEPTED. Stage 2.8: NOT STARTED / UNAUTHORIZED.
-Production deployment: NOT AUTHORIZED.
+Stages 2.1 through 2.7: ACCEPTED / HOSTED VERIFIED / CLOSED. **Stage 2.8: IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING** (not accepted, not closed).
+Stage 2 overall: NOT ACCEPTED. Stage 2.9: NOT STARTED / UNAUTHORIZED. Production deployment: NOT AUTHORIZED.
 
-**Stage 2.7 is closed (owner decision, 2026-10-12).** The hosted run was read and is recorded below. The pre-closure
-notes further down are historical.
+## Stage 2.8 status
+
+Authorized: implementation, local validation, one implementation commit, a normal push to origin/main, and reading the hosted run.
+Baseline `a994dfe174d192e85e1f21dc516e84145c0cf13c`. **Committed and pushed for hosted verification; the hosted result is not
+recorded here yet; not closed; not deployed.** `apps/api/probe.txt` remains untracked, untouched and excluded.
+
+**Design:** a same-origin proxy (Next route handlers for `login`, `me`, `logout`) rather than credentialed CORS. The API, its cookie, its
+Origin allowlist, rate limits, events and migrations are unchanged. The browser Origin is forwarded verbatim; the web origin must be in
+`API_TRUSTED_ORIGINS`. Server-only setting `TSMS_API_ORIGIN` (required in production, fails closed, https unless loopback).
+Owner-approved corrections applied: streaming byte-counted request limit (4 KiB) and per-route response caps; no cookie forwarded on login;
+a session `Set-Cookie` outside the accepted contract is refused; a real-browser suite; a partial CSP. Full specification:
+[docs/security/WEB_AUTHENTICATION.md](../docs/security/WEB_AUTHENTICATION.md).
+
+**DEPLOYMENT BLOCKER (unresolved):** behind this proxy all browsers share one API source address, collapsing the Stage 2.6 per-source
+limits into one shared budget. Stage 2.6 attribution and limits were deliberately **not** changed. Production topology is unknown.
+
+**Validation (actual outcomes):**
+
+- pnpm install --frozen-lockfile: pass
+- pnpm db:generate: pass
+- pnpm format:check: pass
+- pnpm lint: pass
+- pnpm typecheck: pass
+- pnpm test: pass, 401 tests: config 37, redis 4, database 17, web 109, worker 4, api 229, toolchain 1
+- pnpm build: pass
+- pnpm check: pass
+- pnpm test:integration: pass, 407 tests: redis 66, database 35, api 281, web 25
+- pnpm smoke: pass, 23 assertions
+- pnpm mobile:check: pass
+- pnpm mobile:export: pass, 578 modules
+- pnpm test:e2e: pass, 16 tests in a real installed Google Chrome (E2E_BROWSER_CHANNEL=chrome), on its own Redis logical database
+- git diff --check: pass
+- pnpm audit --audit-level=high: FAILS as expected, 2 high findings, exactly GHSA-86w9-cpqp-85rv and GHSA-vfj7-8cjw-p6xm
+- Negative controls: 7 proxy mutations (request limit off, bytes counted as characters, Content-Length ignored, response cap removed, login forwards cookie, Origin laundered, cookie contract off) each failed tests (11, 1, 1, 5, 2, 2, 1) and the file was restored byte-for-byte
+
+**Incidents during validation:**
+
+- The C: drive was at 100% (about 200-270 MB free) during part of this work. Intermittent failures occurred in that state and did not reproduce in the final full run: a V8 out-of-memory crash (exit 134) in one pnpm test, 4 Argon2id HASH_FAILURE unit failures in one pnpm test (3 isolated reruns and a full rerun passed), and a vitest worker exit 0x80000003. The cause is attributed to low disk and virtual memory, and is not proven.
+- Playwright bundled Chromium could not be downloaded (ENOSPC) and was not installed. A Playwright install attempt also removed older cached browser builds from the user-level %LOCALAPPDATA%\ms-playwright cache; they are re-downloadable.
+- The web integration suite once ran concurrently with the API suite and reset the shared limiter, failing two API rate-limit tests; fixed by turbo ordering. mobile:check once failed on a network ECONNRESET and passed on retry.
+- Free space after the final validation run was about 245 MB on C:.
+
+**Changed files:**
+
+- `.env.example`
+- `turbo.json`
+- `pnpm-lock.yaml`
+- `scripts/smoke.mjs`
+- `apps/web/package.json`
+- `apps/web/next.config.ts`
+- `apps/web/app/globals.css`
+- `apps/web/app/page.tsx`
+- `apps/web/app/login-form.tsx`
+- `apps/web/app/session-gate.tsx`
+- `apps/web/app/api/auth/login/route.ts`
+- `apps/web/app/api/auth/me/route.ts`
+- `apps/web/app/api/auth/logout/route.ts`
+- `apps/web/src/server/api-origin.ts`
+- `apps/web/src/server/auth-proxy.ts`
+- `apps/web/src/client/auth-client.ts`
+- `apps/web/src/client/session-state.ts`
+- `apps/web/vitest.config.ts`
+- `apps/web/vitest.integration.config.ts`
+- `apps/web/tests/api-origin.test.ts`
+- `apps/web/tests/auth-proxy.test.ts`
+- `apps/web/tests/auth-client.test.ts`
+- `apps/web/tests/session-state.test.ts`
+- `apps/web/tests/interface.test.tsx`
+- `apps/web/tests/web-auth.integration.test.mjs`
+- `docs/security/WEB_AUTHENTICATION.md`
+- `docs/security/AUTH_API.md`
+- `PROJECT_STATE.md`
+- `project-state.json`
+- `tasks/CURRENT.md`
+- `tasks/ROADMAP.md`
+- `package.json (root: test:e2e script)`
+- `.gitignore (Playwright output)`
+- `eslint.config.mjs (browser globals for e2e callbacks)`
+- `apps/web/playwright.config.mjs`
+- `apps/web/e2e/global-setup.mjs`
+- `apps/web/e2e/fixtures.mjs`
+- `apps/web/e2e/auth.spec.mjs`
+- `apps/web/tests/auth-proxy-limits.test.ts`
+
+**Remaining risks:**
+
+1. DEPLOYMENT BLOCKER (unresolved, owner decision): behind the proxy every browser shares one API source address, so the Stage 2.6 per-source meters collapse into one budget for all users. No trusted-proxy CIDR, forwarded-header trust, signed client-IP assertion, or limit change was made.
+2. Production topology is unknown and unproven; nothing has run on a real host, behind real TLS, or on a real domain. A non-loopback API origin must use HTTPS (enforced).
+3. The CSP is PARTIAL (object-src, base-uri, frame-ancestors, form-action, connect-src). It has no default-src, script-src or style-src and is not an XSS defence. A script-restricting CSP needs per-request nonces (every page dynamically rendered) or fragile post-build hashing; owner decision required.
+4. The browser suite runs in Google Chrome only, over loopback HTTP, locally; it is not in CI. The Secure / __Host- production cookie in a browser, other browsers, TLS and hosted ingress still need a hosted HTTPS verification.
+5. After an oversized or abandoned request body Node will not serve another request on that keep-alive socket until it closes; the server stays responsive on new connections (tested).
+6. No idle session-expiry timer; no double-submit CSRF token; Stage 2.6 and 2.7 limitations remain.
+7. node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm remain open and unsuppressed.
+8. The development machine had critically low disk space; local results should be re-confirmed on a hosted run.
+
+**Exact next action:** read the hosted run, then await the owner documentation-closure decision, the proxy client-identity decision, and the CSP decision. **DO NOT** create a closure commit, deploy,
+begin Stage 2.9, add registration, membership or RBAC, change an accepted Stage 2.1-2.7 contract, delete historical test rows, or touch
+`apps/api/probe.txt` without explicit owner authorization.
+
+---
+
+_The remainder of this file is the Stage 2.7 record, kept as history. Where it says Stage 2.8 is unauthorized, the section above supersedes it._
 
 ## Closure record
 

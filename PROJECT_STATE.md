@@ -16,8 +16,18 @@ Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Latest substage: **Stage 2.7 - Security Events & Sanitization** is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision,
-2026-10-12). **Stage 2.8: NOT STARTED / UNAUTHORIZED**; no next task is authorized.
+Latest substage: **Stage 2.8 - Minimal Web Authentication Integration** is IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING. It is **not hosted-verified, not accepted, not
+closed, and not deployed.** Stage 2.7 is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-12); Stages
+2.1-2.6 likewise. Stage 2 overall: NOT ACCEPTED. **Stage 2.9: NOT STARTED / UNAUTHORIZED.** Production deployment: NOT AUTHORIZED.
+
+Stage 2.8 (baseline `a994dfe`): the web app signs in, restores, and signs out through a same-origin proxy of three API routes. No
+CORS, no API change, no migration. Specification and risks: [docs/security/WEB_AUTHENTICATION.md](docs/security/WEB_AUTHENTICATION.md).
+Local evidence: 401 unit/toolchain, 407 integration (25 through real `next start` + API + PostgreSQL + Redis), 23 smoke, 16 real-browser
+tests in installed Chrome, 578-module Android export; `pnpm audit --audit-level=high` still fails on exactly the two accepted advisories.
+Streaming 4 KiB request limit, response caps, no cookie on login, cookie-contract check, and a **partial** CSP (no script-src) are in place.
+**Unresolved deployment blocker:** behind the proxy all browsers share one API source address, collapsing the Stage 2.6 per-source limits
+into one shared budget; Stage 2.6 was not changed and production topology is unknown. The dev machine had critically low disk during
+validation (see tasks/CURRENT.md).
 
 Accepted capabilities: PostgreSQL local infrastructure, Redis local infrastructure, pgvector extension foundation, Prisma 7 database foundation, packages/database, packages/redis, migration workflow, database and Redis lifecycle handling, API and worker liveness/readiness separation, integration-test infrastructure, test-database safety controls, Docker Compose workflow, fresh-state reproducibility, the Stage 1 CI workflow, the three Prisma dependency security remediations, the temporary InfrastructureProbe scaffolding, and the smoke-test readiness extensions. The Stage 1 known issues were reviewed and accepted as non-blocking.
 

@@ -4,10 +4,10 @@
   "company": "TeamStack Technologies LTD",
   "updatedAt": "2026-10-12",
   "phase": "foundation",
-  "stage": "2.7",
-  "stageName": "Security Events & Sanitization",
-  "stageStatus": "accepted_hosted_verified_closed",
-  "implementationAuthorized": false,
+  "stage": "2.8",
+  "stageName": "Minimal Web Authentication Integration",
+  "stageStatus": "implementation_committed_hosted_verification_pending",
+  "implementationAuthorized": true,
   "previousStage": {
     "stage": "1",
     "name": "Database & Local Infrastructure",
@@ -15,18 +15,18 @@
     "acceptedAt": "2026-10-07",
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
-  "task": "2.7",
-  "status": "accepted_hosted_verified_closed",
-  "reviewStatus": "closed",
+  "task": "2.8",
+  "status": "implementation_committed_hosted_verification_pending",
+  "reviewStatus": "implementation_committed_awaiting_hosted_result",
   "nextTask": {
-    "id": "2.8",
-    "name": "Stage 2.8 (not yet specified)",
+    "id": "2.9",
+    "name": "Stage 2.9 (not yet specified)",
     "status": "not_started_unauthorized",
     "implementationAuthorized": false,
     "accepted": false,
     "hostedVerified": false,
     "record": null,
-    "nextAction": "Await separate owner authorization. Stage 2.8 is NOT STARTED and is NOT AUTHORIZED."
+    "nextAction": "Await separate owner authorization. Stage 2.9 is NOT STARTED and NOT AUTHORIZED."
   },
   "nextPlannedStage": {
     "stage": "2.8",
@@ -271,7 +271,7 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up."
   ],
   "workingTree": "Stage 2.7 closed at implementation commit d898ae907669d21c99132797b0b6ddfbe5078901 and a documentation-only closure commit. The only untracked entry is the unexplained apps/api/probe.txt, which was never staged. The tree is not otherwise modified.",
-  "nextAction": "Await separate explicit owner authorization. Stage 2.8 is NOT STARTED and NOT AUTHORIZED; production deployment is NOT AUTHORIZED.",
+  "nextAction": "Read the hosted run for the Stage 2.8 implementation commit, then await the owner documentation-closure decision, the proxy client-identity decision, and the CSP decision. No closure commit, deployment or Stage 2.9 without explicit authorization.",
   "doNot": [
     "Start Stage 2.6 or later without explicit owner authorization",
     "Expose the API to the public internet before Stage 2.6 rate limiting exists",
@@ -931,7 +931,8 @@
     "2.4": "accepted_hosted_verified_closed",
     "2.5": "accepted_hosted_verified_closed",
     "2.6": "accepted_hosted_verified_closed",
-    "2.7": "accepted_hosted_verified_closed"
+    "2.7": "accepted_hosted_verified_closed",
+    "2.8": "implementation_committed_hosted_verification_pending"
   },
   "stage24": {
     "status": "closed_hosted_verification_complete",
@@ -2721,6 +2722,117 @@
         "whatWasNotChanged": "The FLUSHDB assertion itself is preserved unchanged; it still proves a flush is scoped to the logical database and leaves the default database intact. No production code changed. The Prisma generation task graph is unchanged.",
         "verification": "Three consecutive full pnpm test:integration runs, all green: 52 Redis, 35 database, 239 API."
       }
+    }
+  },
+  "stage28": {
+    "name": "Minimal Web Authentication Integration",
+    "status": "implementation_committed_hosted_verification_pending",
+    "accepted": false,
+    "closed": false,
+    "hostedVerified": false,
+    "committed": true,
+    "pushed": true,
+    "deployed": false,
+    "baselineCommit": "a994dfe174d192e85e1f21dc516e84145c0cf13c",
+    "architecture": "Same-origin proxy via Next route handlers (/api/auth/login, /me, /logout). No CORS. No API change. Session cookie is set by the web origin. The browser Origin is forwarded verbatim and enforced by the unchanged API allowlist.",
+    "specification": "docs/security/WEB_AUTHENTICATION.md",
+    "newConfiguration": "TSMS_API_ORIGIN (web server only; required in production; https unless loopback)",
+    "newDevDependencies": "apps/web: vitest 5.0.3 (already in the lockfile), @playwright/test 1.64.0 (adds playwright and playwright-core), @tsms/api and @tsms/database as workspace links",
+    "changedFiles": [
+      ".env.example",
+      "turbo.json",
+      "pnpm-lock.yaml",
+      "scripts/smoke.mjs",
+      "apps/web/package.json",
+      "apps/web/next.config.ts",
+      "apps/web/app/globals.css",
+      "apps/web/app/page.tsx",
+      "apps/web/app/login-form.tsx",
+      "apps/web/app/session-gate.tsx",
+      "apps/web/app/api/auth/login/route.ts",
+      "apps/web/app/api/auth/me/route.ts",
+      "apps/web/app/api/auth/logout/route.ts",
+      "apps/web/src/server/api-origin.ts",
+      "apps/web/src/server/auth-proxy.ts",
+      "apps/web/src/client/auth-client.ts",
+      "apps/web/src/client/session-state.ts",
+      "apps/web/vitest.config.ts",
+      "apps/web/vitest.integration.config.ts",
+      "apps/web/tests/api-origin.test.ts",
+      "apps/web/tests/auth-proxy.test.ts",
+      "apps/web/tests/auth-client.test.ts",
+      "apps/web/tests/session-state.test.ts",
+      "apps/web/tests/interface.test.tsx",
+      "apps/web/tests/web-auth.integration.test.mjs",
+      "docs/security/WEB_AUTHENTICATION.md",
+      "docs/security/AUTH_API.md",
+      "PROJECT_STATE.md",
+      "project-state.json",
+      "tasks/CURRENT.md",
+      "tasks/ROADMAP.md",
+      "package.json (root: test:e2e script)",
+      ".gitignore (Playwright output)",
+      "eslint.config.mjs (browser globals for e2e callbacks)",
+      "apps/web/playwright.config.mjs",
+      "apps/web/e2e/global-setup.mjs",
+      "apps/web/e2e/fixtures.mjs",
+      "apps/web/e2e/auth.spec.mjs",
+      "apps/web/tests/auth-proxy-limits.test.ts"
+    ],
+    "validation": [
+      "pnpm install --frozen-lockfile: pass",
+      "pnpm db:generate: pass",
+      "pnpm format:check: pass",
+      "pnpm lint: pass",
+      "pnpm typecheck: pass",
+      "pnpm test: pass, 401 tests: config 37, redis 4, database 17, web 109, worker 4, api 229, toolchain 1",
+      "pnpm build: pass",
+      "pnpm check: pass",
+      "pnpm test:integration: pass, 407 tests: redis 66, database 35, api 281, web 25",
+      "pnpm smoke: pass, 23 assertions",
+      "pnpm mobile:check: pass",
+      "pnpm mobile:export: pass, 578 modules",
+      "pnpm test:e2e: pass, 16 tests in a real installed Google Chrome (E2E_BROWSER_CHANNEL=chrome), on its own Redis logical database",
+      "git diff --check: pass",
+      "pnpm audit --audit-level=high: FAILS as expected, 2 high findings, exactly GHSA-86w9-cpqp-85rv and GHSA-vfj7-8cjw-p6xm",
+      "Negative controls: 7 proxy mutations (request limit off, bytes counted as characters, Content-Length ignored, response cap removed, login forwards cookie, Origin laundered, cookie contract off) each failed tests (11, 1, 1, 5, 2, 2, 1) and the file was restored byte-for-byte"
+    ],
+    "remainingRisks": [
+      "DEPLOYMENT BLOCKER (unresolved, owner decision): behind the proxy every browser shares one API source address, so the Stage 2.6 per-source meters collapse into one budget for all users. No trusted-proxy CIDR, forwarded-header trust, signed client-IP assertion, or limit change was made.",
+      "Production topology is unknown and unproven; nothing has run on a real host, behind real TLS, or on a real domain. A non-loopback API origin must use HTTPS (enforced).",
+      "The CSP is PARTIAL (object-src, base-uri, frame-ancestors, form-action, connect-src). It has no default-src, script-src or style-src and is not an XSS defence. A script-restricting CSP needs per-request nonces (every page dynamically rendered) or fragile post-build hashing; owner decision required.",
+      "The browser suite runs in Google Chrome only, over loopback HTTP, locally; it is not in CI. The Secure / __Host- production cookie in a browser, other browsers, TLS and hosted ingress still need a hosted HTTPS verification.",
+      "After an oversized or abandoned request body Node will not serve another request on that keep-alive socket until it closes; the server stays responsive on new connections (tested).",
+      "No idle session-expiry timer; no double-submit CSRF token; Stage 2.6 and 2.7 limitations remain.",
+      "node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm remain open and unsuppressed.",
+      "The development machine had critically low disk space; local results should be re-confirmed on a hosted run."
+    ],
+    "ownerDecisionsRequired": [
+      "Proxy-trust / client-identity model, or retuned per-source limits, before any production use behind this proxy (unchanged: no Stage 2.6 change authorised).",
+      "Whether to adopt nonce-based CSP (every page dynamically rendered) to restrict script execution.",
+      "Whether the browser suite should run in a hosted workflow (needs a browser download) and when a hosted HTTPS verification is run."
+    ],
+    "untrackedPreserved": "apps/api/probe.txt (not touched)",
+    "incidents": [
+      "The C: drive was at 100% (about 200-270 MB free) during part of this work. Intermittent failures occurred in that state and did not reproduce in the final full run: a V8 out-of-memory crash (exit 134) in one pnpm test, 4 Argon2id HASH_FAILURE unit failures in one pnpm test (3 isolated reruns and a full rerun passed), and a vitest worker exit 0x80000003. The cause is attributed to low disk and virtual memory, and is not proven.",
+      "Playwright bundled Chromium could not be downloaded (ENOSPC) and was not installed. A Playwright install attempt also removed older cached browser builds from the user-level %LOCALAPPDATA%\\ms-playwright cache; they are re-downloadable.",
+      "The web integration suite once ran concurrently with the API suite and reset the shared limiter, failing two API rate-limit tests; fixed by turbo ordering. mobile:check once failed on a network ECONNRESET and passed on retry.",
+      "Free space after the final validation run was about 245 MB on C:."
+    ],
+    "browserSuite": {
+      "tests": 16,
+      "browser": "Google Chrome via E2E_BROWSER_CHANNEL=chrome",
+      "redisDatabase": "dedicated logical database (E2E_REDIS_DB, default 2)",
+      "inCi": false
+    },
+    "csp": "partial: object-src, base-uri, frame-ancestors, form-action, connect-src; no script-src (owner decision)",
+    "testCounts": {
+      "unitAndToolchain": 401,
+      "integration": 407,
+      "smoke": 23,
+      "browser": 16,
+      "web unit": 109,
+      "web integration": 25
     }
   }
 }

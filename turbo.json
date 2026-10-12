@@ -12,7 +12,9 @@
     "API_TRUSTED_ORIGINS",
     "API_PASSWORD_RECOVERY_DELIVERY_MODE",
     "API_PASSWORD_RECOVERY_URL_BASE",
-    "API_RATE_LIMIT_HMAC_SECRET"
+    "API_RATE_LIMIT_HMAC_SECRET",
+    "TSMS_API_ORIGIN",
+    "E2E_REDIS_DB"
   ],
   "tasks": {
     "db:generate": {
@@ -33,6 +35,18 @@
     "test:integration": {
       "dependsOn": ["build"],
       "env": ["TEST_DATABASE_URL", "TEST_REDIS_URL"],
+      "outputs": [],
+      "cache": false
+    },
+    "@tsms/web#test:integration": {
+      "dependsOn": ["build", "@tsms/api#test:integration"],
+      "env": ["TEST_DATABASE_URL", "TEST_REDIS_URL"],
+      "outputs": [],
+      "cache": false
+    },
+    "@tsms/web#test:e2e": {
+      "dependsOn": ["build"],
+      "env": ["TEST_DATABASE_URL", "TEST_REDIS_URL", "E2E_REDIS_DB", "E2E_BROWSER_CHANNEL"],
       "outputs": [],
       "cache": false
     },

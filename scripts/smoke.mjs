@@ -227,19 +227,37 @@ try {
   ]) {
     const port = await freePort();
     const require = createRequire(resolve(root, `apps/${name}/package.json`));
-    const record = launch(name, [
-      require.resolve('next/dist/bin/next'),
-      'start',
-      `apps/${name}`,
-      '--hostname',
-      '127.0.0.1',
-      '--port',
-      String(port),
-    ]);
+    const record = launch(
+      name,
+      [
+        require.resolve('next/dist/bin/next'),
+        'start',
+        `apps/${name}`,
+        '--hostname',
+        '127.0.0.1',
+        '--port',
+        String(port),
+      ],
+      // Stage 2.8: the web proxy must not fall back to a development API address in production, so the
+      // smoke run deliberately leaves its upstream unconfigured whatever the developer's shell exports.
+      name === 'web' ? { TSMS_API_ORIGIN: '' } : {},
+    );
     const response = await waitFor(record, `http://127.0.0.1:${port}/`);
     assert.ok((await response.text()).includes(heading));
     assert.equal(response.headers.get('x-powered-by'), null);
     console.log(`PASS ${name} production route`);
+
+    if (name === 'web') {
+      assert.equal(response.headers.get('x-frame-options'), 'DENY');
+      assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+      const proxied = await fetch(`http://127.0.0.1:${port}/api/auth/me`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      assert.equal(proxied.status, 503, 'production web must fail closed without TSMS_API_ORIGIN');
+      assert.equal(proxied.headers.get('cache-control'), 'no-store');
+      assert.deepEqual(await proxied.json(), { statusCode: 503, error: 'service_unavailable' });
+      console.log('PASS web authentication proxy fails closed without a configured API origin');
+    }
   }
 } finally {
   await Promise.all(
