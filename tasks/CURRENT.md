@@ -1,25 +1,52 @@
-# Current task: Stage 2.8 - Minimal Web Authentication Integration (IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING)
+# Current task: none active - Stage 2.8 Minimal Web Authentication Integration is ACCEPTED / HOSTED VERIFIED / CLOSED
 
 Owner: TeamStack Technologies LTD
 
-Stages 2.1 through 2.7: ACCEPTED / HOSTED VERIFIED / CLOSED. **Stage 2.8: IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING** (not accepted, not closed).
-Stage 2 overall: NOT ACCEPTED. Stage 2.9: NOT STARTED / UNAUTHORIZED. Production deployment: NOT AUTHORIZED.
+Stages 2.1 through 2.8: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall: NOT ACCEPTED.
+**Stage 2.9: NOT STARTED / UNAUTHORIZED.** Production deployment: NOT AUTHORIZED. No new task is active in this file.
 
-## Stage 2.8 status
+**Stage 2.8 is closed (owner decision, 2026-10-12)** for the accepted development scope. The hosted run was read and is recorded below.
+Closure is not production readiness.
 
-Authorized: implementation, local validation, one implementation commit, a normal push to origin/main, and reading the hosted run.
-Baseline `a994dfe174d192e85e1f21dc516e84145c0cf13c`. **Committed and pushed for hosted verification; the hosted result is not
-recorded here yet; not closed; not deployed.** `apps/api/probe.txt` remains untracked, untouched and excluded.
+## Stage 2.8 closure record
 
-**Design:** a same-origin proxy (Next route handlers for `login`, `me`, `logout`) rather than credentialed CORS. The API, its cookie, its
-Origin allowlist, rate limits, events and migrations are unchanged. The browser Origin is forwarded verbatim; the web origin must be in
-`API_TRUSTED_ORIGINS`. Server-only setting `TSMS_API_ORIGIN` (required in production, fails closed, https unless loopback).
-Owner-approved corrections applied: streaming byte-counted request limit (4 KiB) and per-route response caps; no cookie forwarded on login;
-a session `Set-Cookie` outside the accepted contract is refused; a real-browser suite; a partial CSP. Full specification:
-[docs/security/WEB_AUTHENTICATION.md](../docs/security/WEB_AUTHENTICATION.md).
+Implementation commit `6ba90869cad6fd3a9ea7f023edcad88e473a1730` (`feat: integrate minimal web authentication`); hosted run [38258942541](https://github.com/ubaliringim/tsms/actions/runs/38258942541):
+`validate` = **success** (every step, including `pnpm check`, `pnpm test:integration`, `mobile:check`, `mobile:export`, `pnpm smoke`, and the
+clean-tree check), `security-audit` = **failure, expected, on exactly the two accepted advisories**, overall workflow = **FAILURE / RED, not
+green**. Hosted counts: 401 unit/toolchain passed (config 37, redis 4, database 17, worker 4, api 229, web 109, toolchain 1), 407 integration
+passed (redis 66, database 35, api 281, web 25), 23 smoke assertions passed, 3 migrations applied, Android export of 578 modules.
+**Browser tests are NOT part of hosted CI:** the 16 Playwright tests passed locally in an installed Google Chrome only, and nothing in
+GitHub Actions ran them. The dependency audit remains unsuppressed and reports node-forge `GHSA-86w9-cpqp-85rv` and braces `GHSA-vfj7-8cjw-p6xm`.
 
-**DEPLOYMENT BLOCKER (unresolved):** behind this proxy all browsers share one API source address, collapsing the Stage 2.6 per-source
-limits into one shared budget. Stage 2.6 attribution and limits were deliberately **not** changed. Production topology is unknown.
+**Design.** A same-origin proxy (Next route handlers for `login`, `me`, `logout`) rather than credentialed CORS. The API, its cookie, its
+Origin allowlist, rate limits, events, and migrations are unchanged. The browser Origin is forwarded verbatim, so the web origin must be in
+`API_TRUSTED_ORIGINS`. Specification: [docs/security/WEB_AUTHENTICATION.md](../docs/security/WEB_AUTHENTICATION.md).
+
+**Limitations retained at closure.**
+
+1. Shared source-IP rate-limit exhaustion: behind the same-origin web proxy every browser reaches the API from the web server's address, so the Stage 2.6 per-source meters become one budget for all users. Unresolved deployment blocker; Stage 2.6 was deliberately not changed.
+2. Production topology, trusted ingress, and TLS termination are unknown, and no deployment has occurred.
+3. There is no approved trusted client-IP forwarding model (no trusted-proxy list, no forwarded-header trust, no signed client-address assertion).
+4. The Content-Security-Policy is partial (object-src, base-uri, frame-ancestors, form-action, connect-src) with no script-src or default-src. It is not an XSS defence; a script-restricting policy needs an owner decision (nonces and dynamic rendering).
+5. Browser testing is local only and Chrome only; it is not in hosted CI.
+6. Production HTTPS and the `Secure` / `__Host-` cookie behaviour in a browser have not been verified. A non-loopback API origin must use HTTPS (enforced).
+7. After an oversized or abandoned request body Node will not serve another request on that keep-alive socket until it closes; new connections are unaffected.
+8. Stage 2.6 limitations remain: Redis as a hard dependency, HMAC secret provisioning and rotation, provisional rate-limit thresholds, lease-expiry over-admission, lost refunds, untested Redis Cluster.
+9. Stage 2.7 limitations remain: non-durable per-process security logs, undefined log and event retention and access, one SESSION_REVOKED row per revoked session, and password reset can fail closed at very high live-session counts.
+10. There is no real password-recovery email provider, so recovery is unavailable in production.
+11. There is no idle session-expiry timer and no double-submit CSRF token (the Origin check covers the two mutating routes).
+12. Both dependency advisories remain OPEN and unsuppressed: node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm.
+13. The development machine has had local disk-space pressure, which coincided with intermittent local failures during validation.
+
+**Exact next action:** await separate explicit owner authorization. **DO NOT** start Stage 2.9, deploy, add registration, membership, or
+RBAC, change an accepted Stage 2.1-2.8 contract, delete historical test rows, or touch `apps/api/probe.txt` without explicit owner
+authorization.
+
+---
+
+## Stage 2.8 local validation record (historical, written before hosted verification)
+
+_These are the local results recorded before the implementation commit. The hosted result above supersedes any "pending" wording here._
 
 **Validation (actual outcomes):**
 
@@ -99,10 +126,6 @@ limits into one shared budget. Stage 2.6 attribution and limits were deliberatel
 6. No idle session-expiry timer; no double-submit CSRF token; Stage 2.6 and 2.7 limitations remain.
 7. node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm remain open and unsuppressed.
 8. The development machine had critically low disk space; local results should be re-confirmed on a hosted run.
-
-**Exact next action:** read the hosted run, then await the owner documentation-closure decision, the proxy client-identity decision, and the CSP decision. **DO NOT** create a closure commit, deploy,
-begin Stage 2.9, add registration, membership or RBAC, change an accepted Stage 2.1-2.7 contract, delete historical test rows, or touch
-`apps/api/probe.txt` without explicit owner authorization.
 
 ---
 

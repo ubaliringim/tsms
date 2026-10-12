@@ -1,9 +1,8 @@
 # Web authentication (Stage 2.8)
 
-Status: **IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING.** Implemented and locally validated; committed as one implementation commit for hosted
-verification, whose result is **not yet recorded here**. **Not hosted-verified, not accepted, not closed, not deployed.**
-Stage 2 overall is not accepted and Stage 2.9 is not authorized. This stage integrates the accepted Stage 2.1-2.7 API
-contracts into the web application and changes none of them.
+Status: **ACCEPTED / HOSTED VERIFIED / CLOSED** (owner decision, 2026-10-12), for the accepted development scope. Hosted evidence is in section 13.
+Stage 2 overall is not accepted and Stage 2.9 is not authorized. **Not deployed; closure is not production readiness.** This stage
+integrates the accepted Stage 2.1-2.7 API contracts into the web application and changes none of them.
 
 ## 1. Decision: same-origin proxy, no CORS
 
@@ -276,3 +275,32 @@ A `script-src` that excludes `'unsafe-inline'` therefore needs one of:
 Adding a nonce is a material architectural change (static to dynamic rendering for the whole application), so it was not
 made. **Owner decision required** before a script-restricting CSP. `'unsafe-eval'` is needed only by React in
 development, and `'unsafe-inline'` is not needed with nonces.
+
+## 13. Hosted verification and closure
+
+Implementation commit `6ba90869cad6fd3a9ea7f023edcad88e473a1730` (`feat: integrate minimal web authentication`); hosted run [38258942541](https://github.com/ubaliringim/tsms/actions/runs/38258942541):
+`validate` = **success** (every step, including `pnpm check`, `pnpm test:integration`, `mobile:check`, `mobile:export`, `pnpm smoke`, and the
+clean-tree check), `security-audit` = **failure, expected, on exactly the two accepted advisories**, overall workflow = **FAILURE / RED, not
+green**. Hosted counts: 401 unit/toolchain passed (config 37, redis 4, database 17, worker 4, api 229, web 109, toolchain 1), 407 integration
+passed (redis 66, database 35, api 281, web 25), 23 smoke assertions passed, 3 migrations applied, Android export of 578 modules.
+**Browser tests are NOT part of hosted CI:** the 16 Playwright tests passed locally in an installed Google Chrome only, and nothing in
+GitHub Actions ran them. The dependency audit remains unsuppressed and reports node-forge `GHSA-86w9-cpqp-85rv` and braces `GHSA-vfj7-8cjw-p6xm`.
+
+Browser coverage described in section 11 is local only: the hosted workflow has no Playwright or `test:e2e` step, so no hosted run
+has executed a browser test.
+
+### Limitations retained at closure
+
+1. Shared source-IP rate-limit exhaustion: behind the same-origin web proxy every browser reaches the API from the web server's address, so the Stage 2.6 per-source meters become one budget for all users. Unresolved deployment blocker; Stage 2.6 was deliberately not changed.
+2. Production topology, trusted ingress, and TLS termination are unknown, and no deployment has occurred.
+3. There is no approved trusted client-IP forwarding model (no trusted-proxy list, no forwarded-header trust, no signed client-address assertion).
+4. The Content-Security-Policy is partial (object-src, base-uri, frame-ancestors, form-action, connect-src) with no script-src or default-src. It is not an XSS defence; a script-restricting policy needs an owner decision (nonces and dynamic rendering).
+5. Browser testing is local only and Chrome only; it is not in hosted CI.
+6. Production HTTPS and the `Secure` / `__Host-` cookie behaviour in a browser have not been verified. A non-loopback API origin must use HTTPS (enforced).
+7. After an oversized or abandoned request body Node will not serve another request on that keep-alive socket until it closes; new connections are unaffected.
+8. Stage 2.6 limitations remain: Redis as a hard dependency, HMAC secret provisioning and rotation, provisional rate-limit thresholds, lease-expiry over-admission, lost refunds, untested Redis Cluster.
+9. Stage 2.7 limitations remain: non-durable per-process security logs, undefined log and event retention and access, one SESSION_REVOKED row per revoked session, and password reset can fail closed at very high live-session counts.
+10. There is no real password-recovery email provider, so recovery is unavailable in production.
+11. There is no idle session-expiry timer and no double-submit CSRF token (the Origin check covers the two mutating routes).
+12. Both dependency advisories remain OPEN and unsuppressed: node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm.
+13. The development machine has had local disk-space pressure, which coincided with intermittent local failures during validation.

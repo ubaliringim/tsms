@@ -16,18 +16,13 @@ Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Latest substage: **Stage 2.8 - Minimal Web Authentication Integration** is IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING. It is **not hosted-verified, not accepted, not
-closed, and not deployed.** Stage 2.7 is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-12); Stages
-2.1-2.6 likewise. Stage 2 overall: NOT ACCEPTED. **Stage 2.9: NOT STARTED / UNAUTHORIZED.** Production deployment: NOT AUTHORIZED.
+Latest substage: **Stage 2.8 - Minimal Web Authentication Integration** is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-12),
+for the accepted development scope. Stages 2.1-2.7 likewise. Stage 2 overall: NOT ACCEPTED. **Stage 2.9: NOT STARTED /
+UNAUTHORIZED.** Production deployment: NOT AUTHORIZED. Closure is not production readiness.
 
-Stage 2.8 (baseline `a994dfe`): the web app signs in, restores, and signs out through a same-origin proxy of three API routes. No
-CORS, no API change, no migration. Specification and risks: [docs/security/WEB_AUTHENTICATION.md](docs/security/WEB_AUTHENTICATION.md).
-Local evidence: 401 unit/toolchain, 407 integration (25 through real `next start` + API + PostgreSQL + Redis), 23 smoke, 16 real-browser
-tests in installed Chrome, 578-module Android export; `pnpm audit --audit-level=high` still fails on exactly the two accepted advisories.
-Streaming 4 KiB request limit, response caps, no cookie on login, cookie-contract check, and a **partial** CSP (no script-src) are in place.
-**Unresolved deployment blocker:** behind the proxy all browsers share one API source address, collapsing the Stage 2.6 per-source limits
-into one shared budget; Stage 2.6 was not changed and production topology is unknown. The dev machine had critically low disk during
-validation (see tasks/CURRENT.md).
+Stage 2.8: the web app signs in, restores, and signs out through a same-origin proxy of three API routes. No CORS, no API change, no
+migration. Specification and risks: [docs/security/WEB_AUTHENTICATION.md](docs/security/WEB_AUTHENTICATION.md). Hosted evidence and the
+retained limitations are in the Stage 2.8 closure record below and in tasks/CURRENT.md.
 
 Accepted capabilities: PostgreSQL local infrastructure, Redis local infrastructure, pgvector extension foundation, Prisma 7 database foundation, packages/database, packages/redis, migration workflow, database and Redis lifecycle handling, API and worker liveness/readiness separation, integration-test infrastructure, test-database safety controls, Docker Compose workflow, fresh-state reproducibility, the Stage 1 CI workflow, the three Prisma dependency security remediations, the temporary InfrastructureProbe scaffolding, and the smoke-test readiness extensions. The Stage 1 known issues were reviewed and accepted as non-blocking.
 
@@ -65,13 +60,19 @@ Stage 2.7 status: **ACCEPTED / HOSTED VERIFIED / CLOSED** (owner decision, 2026-
 Authentication security events and sanitization; the accepted Stage 2.1 `AuthenticationEvent` schema is reused
 unchanged. **Not deployed.** Record at tasks/CURRENT.md and docs/security/SECURITY_EVENTS.md.
 
-Stage 2 overall: NOT ACCEPTED. Stage 2.8: NOT STARTED / UNAUTHORIZED.
+Stage 2.8 status: **ACCEPTED / HOSTED VERIFIED / CLOSED** (owner decision, 2026-10-12). Implementation commit `6ba90869cad6fd3a9ea7f023edcad88e473a1730`; hosted run
+[38258942541](https://github.com/ubaliringim/tsms/actions/runs/38258942541): `validate` = **success**, `security-audit` = **failure, expected, on exactly the two accepted
+advisories**, overall workflow = **RED, not green**. Same-origin web authentication proxy and minimal sign-in interface; the 16 browser
+tests ran locally in Chrome only and are not part of hosted CI. **Not deployed.** Record at tasks/CURRENT.md and
+docs/security/WEB_AUTHENTICATION.md.
 
-Exact next action: await separate explicit owner authorization before any further work. Stage 2.8 is NOT STARTED and is NOT
-AUTHORIZED, and production deployment is NOT AUTHORIZED. The Stage 2.7 limitations recorded below remain open; acceptance of
-the stage is not production readiness.
+Stage 2 overall: NOT ACCEPTED. Stage 2.9: NOT STARTED / UNAUTHORIZED.
 
-DO NOT: start Stage 2.8 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken or suppress audits, amend, force-push, or deploy without explicit authorization.
+Exact next action: await separate explicit owner authorization before any further work. Stage 2.9 is NOT STARTED and is NOT
+AUTHORIZED, and production deployment is NOT AUTHORIZED. The Stage 2.8 limitations recorded in its closure record, and the Stage 2.7
+limitations beneath it, remain open; acceptance of a stage is not production readiness.
+
+DO NOT: start Stage 2.9 or later, deploy to any public network, add a real email provider, add a session-generation column, add registration/email-verification/MFA, change accepted schema/migrations, weaken or suppress audits, amend, force-push, or deploy without explicit authorization.
 
 Current evidence and handoff: tasks/CURRENT.md. Historical Stage 1 acceptance: tasks/completed/stage-1-database-and-local-infrastructure.md. Security dispositions, owner decisions, and audit policy: docs/security/DEPENDENCY_RISK_REGISTER.md. Database and infrastructure implementation: docs/architecture/DATABASE.md and infrastructure/README.md. Toolchain compatibility: docs/architecture/DEPENDENCY_REVIEW.md.
 
@@ -521,7 +522,41 @@ decision.
 
 Stage 2.5 remains ACCEPTED / HOSTED VERIFIED / CLOSED and its closure history is unchanged. Stage 2
 overall remains NOT ACCEPTED. Stage 2.6 is ACCEPTED / HOSTED VERIFIED / CLOSED.
-Stage 2.7 is ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2.8 remains NOT STARTED / UNAUTHORIZED.
+Stage 2.7 is ACCEPTED / HOSTED VERIFIED / CLOSED. (Historical wording: when this was written, Stage 2.8 was NOT STARTED / UNAUTHORIZED.)
+
+## Stage 2.8 - Minimal Web Authentication Integration - 2026-10-12 (closed 2026-10-12)
+
+### Closure record - 2026-10-12
+
+Implementation commit `6ba90869cad6fd3a9ea7f023edcad88e473a1730` (`feat: integrate minimal web authentication`); hosted run [38258942541](https://github.com/ubaliringim/tsms/actions/runs/38258942541):
+`validate` = **success** (every step, including `pnpm check`, `pnpm test:integration`, `mobile:check`, `mobile:export`, `pnpm smoke`, and the
+clean-tree check), `security-audit` = **failure, expected, on exactly the two accepted advisories**, overall workflow = **FAILURE / RED, not
+green**. Hosted counts: 401 unit/toolchain passed (config 37, redis 4, database 17, worker 4, api 229, web 109, toolchain 1), 407 integration
+passed (redis 66, database 35, api 281, web 25), 23 smoke assertions passed, 3 migrations applied, Android export of 578 modules.
+**Browser tests are NOT part of hosted CI:** the 16 Playwright tests passed locally in an installed Google Chrome only, and nothing in
+GitHub Actions ran them. The dependency audit remains unsuppressed and reports node-forge `GHSA-86w9-cpqp-85rv` and braces `GHSA-vfj7-8cjw-p6xm`.
+
+Scope delivered: same-origin Next route handlers for `login`, `me`, and `logout`; header allowlists in both directions; the browser
+`Origin` forwarded verbatim; no cookie forwarded on login; streaming, byte-counted request limit (4 KiB) and per-route response caps;
+refusal of a session `Set-Cookie` outside the accepted cookie contract; `TSMS_API_ORIGIN` (server-only, required in production, https
+unless loopback); a minimal sign-in, restoration, and sign-out interface; a partial CSP; unit, real-chain integration, and local browser
+tests. No change to the API, Stage 2.6 attribution or limits, Stage 2.7 behaviour, migrations, or the cookie contract.
+
+**Limitations retained at closure.** Closure is acceptance for the development scope, **not production readiness**.
+
+1. Shared source-IP rate-limit exhaustion: behind the same-origin web proxy every browser reaches the API from the web server's address, so the Stage 2.6 per-source meters become one budget for all users. Unresolved deployment blocker; Stage 2.6 was deliberately not changed.
+2. Production topology, trusted ingress, and TLS termination are unknown, and no deployment has occurred.
+3. There is no approved trusted client-IP forwarding model (no trusted-proxy list, no forwarded-header trust, no signed client-address assertion).
+4. The Content-Security-Policy is partial (object-src, base-uri, frame-ancestors, form-action, connect-src) with no script-src or default-src. It is not an XSS defence; a script-restricting policy needs an owner decision (nonces and dynamic rendering).
+5. Browser testing is local only and Chrome only; it is not in hosted CI.
+6. Production HTTPS and the `Secure` / `__Host-` cookie behaviour in a browser have not been verified. A non-loopback API origin must use HTTPS (enforced).
+7. After an oversized or abandoned request body Node will not serve another request on that keep-alive socket until it closes; new connections are unaffected.
+8. Stage 2.6 limitations remain: Redis as a hard dependency, HMAC secret provisioning and rotation, provisional rate-limit thresholds, lease-expiry over-admission, lost refunds, untested Redis Cluster.
+9. Stage 2.7 limitations remain: non-durable per-process security logs, undefined log and event retention and access, one SESSION_REVOKED row per revoked session, and password reset can fail closed at very high live-session counts.
+10. There is no real password-recovery email provider, so recovery is unavailable in production.
+11. There is no idle session-expiry timer and no double-submit CSRF token (the Origin check covers the two mutating routes).
+12. Both dependency advisories remain OPEN and unsuppressed: node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm.
+13. The development machine has had local disk-space pressure, which coincided with intermittent local failures during validation.
 
 ## Stage 2.7 - Security Events & Sanitization - 2026-10-11 (closed 2026-10-12)
 

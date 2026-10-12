@@ -6,8 +6,8 @@
   "phase": "foundation",
   "stage": "2.8",
   "stageName": "Minimal Web Authentication Integration",
-  "stageStatus": "implementation_committed_hosted_verification_pending",
-  "implementationAuthorized": true,
+  "stageStatus": "accepted_hosted_verified_closed",
+  "implementationAuthorized": false,
   "previousStage": {
     "stage": "1",
     "name": "Database & Local Infrastructure",
@@ -16,8 +16,8 @@
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
   "task": "2.8",
-  "status": "implementation_committed_hosted_verification_pending",
-  "reviewStatus": "implementation_committed_awaiting_hosted_result",
+  "status": "accepted_hosted_verified_closed",
+  "reviewStatus": "closed",
   "nextTask": {
     "id": "2.9",
     "name": "Stage 2.9 (not yet specified)",
@@ -271,7 +271,7 @@
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up."
   ],
   "workingTree": "Stage 2.7 closed at implementation commit d898ae907669d21c99132797b0b6ddfbe5078901 and a documentation-only closure commit. The only untracked entry is the unexplained apps/api/probe.txt, which was never staged. The tree is not otherwise modified.",
-  "nextAction": "Read the hosted run for the Stage 2.8 implementation commit, then await the owner documentation-closure decision, the proxy client-identity decision, and the CSP decision. No closure commit, deployment or Stage 2.9 without explicit authorization.",
+  "nextAction": "Await separate explicit owner authorization. Stage 2.9 is NOT STARTED and NOT AUTHORIZED; production deployment is NOT AUTHORIZED.",
   "doNot": [
     "Start Stage 2.6 or later without explicit owner authorization",
     "Expose the API to the public internet before Stage 2.6 rate limiting exists",
@@ -932,7 +932,7 @@
     "2.5": "accepted_hosted_verified_closed",
     "2.6": "accepted_hosted_verified_closed",
     "2.7": "accepted_hosted_verified_closed",
-    "2.8": "implementation_committed_hosted_verification_pending"
+    "2.8": "accepted_hosted_verified_closed"
   },
   "stage24": {
     "status": "closed_hosted_verification_complete",
@@ -2726,10 +2726,10 @@
   },
   "stage28": {
     "name": "Minimal Web Authentication Integration",
-    "status": "implementation_committed_hosted_verification_pending",
-    "accepted": false,
-    "closed": false,
-    "hostedVerified": false,
+    "status": "accepted_hosted_verified_closed",
+    "accepted": true,
+    "closed": true,
+    "hostedVerified": true,
     "committed": true,
     "pushed": true,
     "deployed": false,
@@ -2807,11 +2807,6 @@
       "node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm remain open and unsuppressed.",
       "The development machine had critically low disk space; local results should be re-confirmed on a hosted run."
     ],
-    "ownerDecisionsRequired": [
-      "Proxy-trust / client-identity model, or retuned per-source limits, before any production use behind this proxy (unchanged: no Stage 2.6 change authorised).",
-      "Whether to adopt nonce-based CSP (every page dynamically rendered) to restrict script execution.",
-      "Whether the browser suite should run in a hosted workflow (needs a browser download) and when a hosted HTTPS verification is run."
-    ],
     "untrackedPreserved": "apps/api/probe.txt (not touched)",
     "incidents": [
       "The C: drive was at 100% (about 200-270 MB free) during part of this work. Intermittent failures occurred in that state and did not reproduce in the final full run: a V8 out-of-memory crash (exit 134) in one pnpm test, 4 Argon2id HASH_FAILURE unit failures in one pnpm test (3 isolated reruns and a full rerun passed), and a vitest worker exit 0x80000003. The cause is attributed to low disk and virtual memory, and is not proven.",
@@ -2833,6 +2828,47 @@
       "browser": 16,
       "web unit": 109,
       "web integration": 25
-    }
+    },
+    "implementationCommit": "6ba90869cad6fd3a9ea7f023edcad88e473a1730",
+    "hostedRun": {
+      "id": 38258942541,
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/38258942541",
+      "headSha": "6ba90869cad6fd3a9ea7f023edcad88e473a1730",
+      "validate": "success",
+      "securityAudit": "failure_expected_two_accepted_advisories",
+      "workflow": "failure_red",
+      "unitAndToolchainTests": 401,
+      "integrationTests": 407,
+      "smokeAssertions": 23,
+      "androidExportModules": 578,
+      "migrationsApplied": 3,
+      "browserTestsInHostedCi": false
+    },
+    "closure": {
+      "ownerDecision": "2026-10-12",
+      "scope": "development only; not production readiness",
+      "browserTests": "16 passed locally in installed Google Chrome; not part of hosted CI"
+    },
+    "retainedLimitations": [
+      "Shared source-IP rate-limit exhaustion: behind the same-origin web proxy every browser reaches the API from the web server's address, so the Stage 2.6 per-source meters become one budget for all users. Unresolved deployment blocker; Stage 2.6 was deliberately not changed.",
+      "Production topology, trusted ingress, and TLS termination are unknown, and no deployment has occurred.",
+      "There is no approved trusted client-IP forwarding model (no trusted-proxy list, no forwarded-header trust, no signed client-address assertion).",
+      "The Content-Security-Policy is partial (object-src, base-uri, frame-ancestors, form-action, connect-src) with no script-src or default-src. It is not an XSS defence; a script-restricting policy needs an owner decision (nonces and dynamic rendering).",
+      "Browser testing is local only and Chrome only; it is not in hosted CI.",
+      "Production HTTPS and the `Secure` / `__Host-` cookie behaviour in a browser have not been verified. A non-loopback API origin must use HTTPS (enforced).",
+      "After an oversized or abandoned request body Node will not serve another request on that keep-alive socket until it closes; new connections are unaffected.",
+      "Stage 2.6 limitations remain: Redis as a hard dependency, HMAC secret provisioning and rotation, provisional rate-limit thresholds, lease-expiry over-admission, lost refunds, untested Redis Cluster.",
+      "Stage 2.7 limitations remain: non-durable per-process security logs, undefined log and event retention and access, one SESSION_REVOKED row per revoked session, and password reset can fail closed at very high live-session counts.",
+      "There is no real password-recovery email provider, so recovery is unavailable in production.",
+      "There is no idle session-expiry timer and no double-submit CSRF token (the Origin check covers the two mutating routes).",
+      "Both dependency advisories remain OPEN and unsuppressed: node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm.",
+      "The development machine has had local disk-space pressure, which coincided with intermittent local failures during validation."
+    ],
+    "nextAction": "Await separate owner authorization. Stage 2.9 is NOT STARTED and NOT AUTHORIZED.",
+    "openOwnerDecisions": [
+      "Proxy-trust / client-identity model, or retuned per-source limits, before any production use behind the proxy.",
+      "Whether to adopt a nonce-based CSP (every page dynamically rendered) to restrict script execution.",
+      "Whether and when to run the browser suite in a hosted workflow, and when to run a hosted HTTPS verification."
+    ]
   }
 }
