@@ -1,13 +1,42 @@
-# Current task: Stage 2.7 - Security Events & Sanitization (IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING)
+# Current task: Stage 2.7 - Security Events & Sanitization (ACCEPTED / HOSTED VERIFIED / CLOSED)
 
 Owner: TeamStack Technologies LTD
 
 Stage 0 and Stage 1: ACCEPTED. Stages 2.1 through 2.6: ACCEPTED / HOSTED VERIFIED / CLOSED.
-**Stage 2.7: IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING.**
+**Stage 2.7: ACCEPTED / HOSTED VERIFIED / CLOSED.**
 Stage 2 overall: NOT ACCEPTED. Stage 2.8: NOT STARTED / UNAUTHORIZED.
-Production deployment: PROHIBITED.
+Production deployment: NOT AUTHORIZED.
 
-**Implementation committed; hosted verification pending.** Nothing in this document claims hosted verification until the hosted run is read. Stage 2.7 is **not closed**.
+**Stage 2.7 is closed (owner decision, 2026-10-12).** The hosted run was read and is recorded below. The pre-closure
+notes further down are historical.
+
+## Closure record
+
+Implementation commit `d898ae907669d21c99132797b0b6ddfbe5078901` (`feat: add authentication security events and sanitization`); hosted run [38231523798](https://github.com/ubaliringim/tsms/actions/runs/38231523798):
+`validate` = **success**, `security-audit` = **failure, expected, on exactly the two accepted advisories**, overall workflow =
+**RED, not green**. Hosted counts: 292 unit/toolchain (config 37, redis 4, database 17, worker 4, api 229, toolchain 1),
+382 integration (redis 66, database 35, api 281), 22 smoke assertions, 3 migrations applied with 0 pending, Android export of
+578 modules, clean-tree check passed.
+
+**Limitations retained at closure.** Closure is acceptance for development, **not production readiness**.
+
+1. Password reset can fail closed at sufficiently high live-session counts: a reset is one transaction under
+   Prisma's 5 s default and no per-user session cap exists. Success at 100,000 sessions was a local observation on
+   one machine, not a production guarantee.
+2. One `SESSION_REVOKED` event is written per session actually revoked.
+3. `LOGIN_SUCCEEDED` has no per-account event-volume bound, only the global Argon2id budget.
+4. Security logs are non-durable, throttled per process, and are not audit events.
+5. Log retention, centralised collection, restricted access, and alerting are production prerequisites.
+6. `AuthenticationEvent` table retention and read access remain undefined; no event read API exists.
+7. Integration performance varies under host memory pressure.
+8. Stage 2.6's Redis, proxy, HMAC, and abuse-control limitations remain.
+9. Both dependency advisories remain **OPEN and unsuppressed**: node-forge `GHSA-86w9-cpqp-85rv` and braces
+   `GHSA-vfj7-8cjw-p6xm`.
+10. The historical test-database rows (581 users, plus one residual user with six events) were intentionally not
+    deleted, and `apps/api/probe.txt` remains an unexplained untracked file.
+
+_Everything below this record was written before closure. Where it says "locally validated", "under review", or "pending", this
+record supersedes it._
 
 ## Authorization
 
@@ -756,11 +785,11 @@ platform follow-up is preserved unchanged, as is the resolved Prisma generation 
 
 Branch `main`, baseline `8442769f4642a3d0dad9735ecb8d7db0628a8479` matching origin/main.
 
-Stage 2.7 is **locally validated and committed as one implementation commit** (`feat: add authentication security
-events and sanitization`), pushed to origin/main for hosted verification. The untracked `apps/api/probe.txt` is
-excluded. No hosted result is recorded here, and **no deployment** has occurred at any point in this stage.
+Stage 2.7 was committed as `d898ae907669d21c99132797b0b6ddfbe5078901` (`feat: add authentication security events and sanitization`), pushed to origin/main,
+hosted-verified (`validate` success, `security-audit` expected failure, workflow RED) and closed by a documentation-only
+commit. The untracked `apps/api/probe.txt` was never staged. **No deployment** has occurred at any point in this stage.
 
-Exact next action: read the hosted run for the implementation commit, then await the owner's documentation-closure
-decision. Do not create the closure commit, deploy, or begin Stage 2.8 without explicit authorization.
+Exact next action: await separate explicit owner authorization. Stage 2.8 is NOT STARTED and is NOT AUTHORIZED; this file
+deliberately names no next task. Production deployment is NOT AUTHORIZED.
 
-**HARD STOP: no documentation-closure commit, no deployment, and no Stage 2.8 without explicit owner authorization.**
+**HARD STOP: no Stage 2.8 and no deployment without explicit owner authorization.**

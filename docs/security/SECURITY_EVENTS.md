@@ -1,6 +1,10 @@
 # Stage 2.7 - Security Events and Sanitization
 
-Owner: TeamStack Technologies LTD. Stage 2.7 is **IMPLEMENTATION COMMITTED / HOSTED VERIFICATION PENDING**.
+Owner: TeamStack Technologies LTD. Stage 2.7 is **ACCEPTED / HOSTED VERIFIED / CLOSED** (owner decision, 2026-10-12).
+
+> **Reading note.** Sections 1 to 14 were written during implementation and keep that history, including statements such as
+> "locally validated" and "awaiting owner review". Sections 15 and 16 record the final design review and the set-based
+> correction. **Section 17 and section 18 are the current accepted state.** Where an earlier section differs from them, they win.
 
 This document is the contract for what the system records about authentication, what it deliberately does
 not record, and where the boundary between a durable audit record and an operational log line is drawn.
@@ -692,7 +696,7 @@ same test normally takes 3.6 to 5.2 s. Evidence gathered:
 
 ---
 
-## 17. State at the implementation commit
+## 17. Limitations at the implementation commit (retained at closure)
 
 The owner accepted Stage 2.7 locally for an implementation commit and hosted verification. The following are
 **not resolved**, and the first is accepted only provisionally for development, **not for production
@@ -717,3 +721,20 @@ readiness**:
    `GHSA-vfj7-8cjw-p6xm`. The `security-audit` job is expected to fail on exactly these two.
 10. Historical test-database rows (581 users, plus one residual user with six events) were intentionally not
     deleted. `apps/api/probe.txt` is an unexplained untracked file and is excluded from the commit.
+
+---
+
+## 18. Closure
+
+Stage 2.7 is **ACCEPTED / HOSTED VERIFIED / CLOSED** by owner decision on 2026-10-12.
+
+- Implementation commit: `d898ae907669d21c99132797b0b6ddfbe5078901`.
+- Hosted run: [38231523798](https://github.com/ubaliringim/tsms/actions/runs/38231523798).
+- `validate`: **success** (install, Prisma generate, infra up, `pnpm check`, integration, mobile check and export, smoke,
+  infra down, clean-tree check). `security-audit`: **failure, expected**, on exactly node-forge `GHSA-86w9-cpqp-85rv` and
+  braces `GHSA-vfj7-8cjw-p6xm`. Overall workflow: **RED, not green**.
+- Hosted counts: 292 unit/toolchain, 382 integration, 22 smoke, 3 migrations applied with 0 pending, 578-module Android export.
+
+Closure is acceptance for development. It is **not production readiness**, and every limitation in section 17 remains
+open. Both advisories remain open and unsuppressed. Stage 2 overall is not accepted, Stage 2.8 is not started and not
+authorized, and production deployment is not authorized.
