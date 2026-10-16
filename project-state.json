@@ -6,8 +6,8 @@
   "phase": "foundation",
   "stage": "2.9",
   "stageName": "Security review and controlled remediation",
-  "stageStatus": "remediation_implemented_locally_validated_except_external_failure_under_owner_review",
-  "implementationAuthorized": true,
+  "stageStatus": "accepted_hosted_verified_closed",
+  "implementationAuthorized": false,
   "previousStage": {
     "stage": "1",
     "name": "Database & Local Infrastructure",
@@ -16,8 +16,8 @@
     "record": "tasks/completed/stage-1-database-and-local-infrastructure.md"
   },
   "task": "2.9",
-  "status": "remediation_implemented_locally_validated_except_external_failure_under_owner_review",
-  "reviewStatus": "under_owner_review",
+  "status": "accepted_hosted_verified_closed",
+  "reviewStatus": "accepted_by_owner_2026-10-16",
   "nextTask": {
     "id": "2.10",
     "name": "Stage 2.10 (not yet specified)",
@@ -270,8 +270,8 @@
     "checkout@v4, setup-node@v4, and pnpm/action-setup@v4 declare node20; GitHub runs actions on Node 24. Action upgrades deferred to a separately validated follow-up.",
     "ubuntu-latest migrates from 24.04 to 26.04 during October 19-November 19, 2026; validate the new image as follow-up."
   ],
-  "workingTree": "Stage 2.7 closed at implementation commit d898ae907669d21c99132797b0b6ddfbe5078901 and a documentation-only closure commit. The only untracked entry is the unexplained apps/api/probe.txt, which was never staged. The tree is not otherwise modified.",
-  "nextAction": "Owner review of the Stage 2.9 remediation and the Expo CI compatibility change; decide when to move Expo to 57.0.30 (after about 2026-10-16 14:41 UTC, with no release-age exclusions); explicit authorization is required before any commit or push. No deployment, closure, or Stage 2.10.",
+  "workingTree": "Stage 2.9 implementation commit 3c01a217c4d6202d39ac6f496746e999d48e4379 was pushed to main and verified on hosted run 38873087599; the documentation closure is the following commit. The only untracked entry is the unexplained apps/api/probe.txt, which was never staged.",
+  "nextAction": "Await separate explicit owner authorization. Stage 2.9 is accepted and closed for development; production deployment, Stage 2.10 and Stage 3 are NOT AUTHORIZED.",
   "doNot": [
     "Start Stage 2.6 or later without explicit owner authorization",
     "Expose the API to the public internet before Stage 2.6 rate limiting exists",
@@ -933,7 +933,7 @@
     "2.6": "accepted_hosted_verified_closed",
     "2.7": "accepted_hosted_verified_closed",
     "2.8": "accepted_hosted_verified_closed",
-    "2.9": "remediation_implemented_locally_validated_except_external_failure_under_owner_review"
+    "2.9": "accepted_hosted_verified_closed"
   },
   "stage24": {
     "status": "closed_hosted_verification_complete",
@@ -2874,14 +2874,51 @@
   },
   "stage29": {
     "name": "Security review and controlled remediation",
-    "status": "remediation_implemented_locally_validated_except_external_failure_under_owner_review",
-    "accepted": false,
-    "closed": false,
-    "hostedVerified": false,
-    "committed": false,
-    "pushed": false,
+    "status": "accepted_hosted_verified_closed",
+    "accepted": true,
+    "closed": true,
+    "hostedVerified": true,
+    "committed": true,
+    "pushed": true,
+    "acceptedAt": "2026-10-16",
+    "closedAt": "2026-10-16",
     "deployed": false,
     "baselineCommit": "64ff6c49e7006c95de1cb609257758c5ae588cc9",
+    "implementationCommit": "3c01a217c4d6202d39ac6f496746e999d48e4379",
+    "hostedRun": {
+      "id": 38873087599,
+      "url": "https://github.com/ubaliringim/tsms/actions/runs/38873087599",
+      "headSha": "3c01a217c4d6202d39ac6f496746e999d48e4379",
+      "event": "push",
+      "validate": "success",
+      "securityAuditDiff": "success",
+      "securityAudit": "failure_expected_two_accepted_advisories",
+      "expoLiveDiagnostic": "job_failure_by_design_result_INCOMPATIBLE_installed_57.0.28_below_advertised_~57.0.30_warning_annotation_visible",
+      "workflow": "failure_red",
+      "unitAndToolchainTests": 682,
+      "integrationTests": 446,
+      "smokeAssertions": 27,
+      "androidExportModules": 578,
+      "browserTestsInHostedCi": false,
+      "jobSummary": "written by the script; viewable on the run page; not independently read from the logs"
+    },
+    "closure": {
+      "ownerDecision": "2026-10-16",
+      "scope": "development only; not production readiness; production deployment NOT AUTHORIZED",
+      "retained": [
+        "F-04 targeted account lockout unresolved",
+        "F-05 shared source-IP bucket behind the web proxy: production deployment blocker",
+        "Production ingress and TLS topology undecided",
+        "Partial CSP; browser tests local-only; no recovery email provider; no idle session expiry",
+        "forgot answers 503 for an ineligible address when the Argon2id semaphore is saturated while an eligible address answers 202",
+        "Account at its own success limit refuses faster than an unknown address",
+        "Recovery issuance can wait on a long reset of the same user and answer 503",
+        "Stage 2.6 and 2.7 limitations remain",
+        "node-forge GHSA-86w9-cpqp-85rv and braces GHSA-vfj7-8cjw-p6xm remain open and unsuppressed",
+        "Online pnpm mobile:check fails while expo 57.0.28 is below the advertised ~57.0.30",
+        "Expo remote requirements must be reviewed before any production deployment"
+      ]
+    },
     "implemented": {
       "F-01": "Global Argon2id budget is charged at the Argon2id admission choke point, not at request admission. Malformed requests have their own bounded per-source meter (30 per 5 min), reserve nothing, and are never refunded.",
       "F-02": "Provisional per-account success meter: 10 successful logins per 10 minutes. Charged after the password verifies and before any session exists; returned if session creation fails; failed attempts never consume it.",
@@ -2924,7 +2961,7 @@
       "web integration": 25,
       "node:test": 114
     },
-    "externalFailure": "Online pnpm mobile:check fails (exit 1): installed expo 57.0.28 is below the ~57.0.30 that Expo advertises. CI now runs the check offline (passes) and a separate informational live diagnostic reports the incompatibility. No Expo, lockfile or workspace policy change was made in this task.",
+    "externalFailure": "Online pnpm mobile:check fails (exit 1): installed expo 57.0.28 is below the ~57.0.30 that Expo advertises. CI runs the check offline (passes) and the separate informational expo-live-diagnostic job reports INCOMPATIBLE. Accepted for development; not changed by the closure.",
     "unresolvedFindings": [
       "F-04 targeted account lockout",
       "F-05 shared source-IP bucket behind the web proxy (deployment blocker)"
@@ -2935,7 +2972,7 @@
     },
     "productionConfiguration": "docs/security/PRODUCTION_CONFIGURATION.md",
     "auditBaseline": "docs/security/audit-baseline.json",
-    "nextAction": "Owner review of the Stage 2.9 remediation and the Expo CI compatibility change; decide when to move Expo to 57.0.30 (after about 2026-10-16 14:41 UTC, with no release-age exclusions); explicit authorization is required before any commit or push. No deployment, closure, or Stage 2.10.",
+    "nextAction": "Await separate explicit owner authorization. No deployment, Stage 2.10 or Stage 3. Moving Expo to 57.0.30 (eligible after about 2026-10-16 14:41 UTC, no release-age exclusions) is an open owner decision.",
     "finalInspection": [
       "F-01 gap found and fixed: a well-formed login whose password fails the policy took an Argon2id slot and spent a global-budget token although the verifier returns before Argon2id runs. It now takes neither.",
       "Concurrency: with three global tokens, six simultaneous logins give exactly three successes and three 429s with Retry-After; sessions and events number three; every reservation and every semaphore slot is returned.",
@@ -2986,7 +3023,7 @@
         "D2: all external text (server responses, CLI stdout and stderr, dependency names and ranges, exception messages) is neutralized at the output boundary for the plain log, the workflow annotation and the Markdown summary, so it cannot forge workflow commands or annotations, inject terminal escapes, or alter the summary structure."
       ],
       "diagnosticDefectEvidence": "30 new tests (tests/expo-live-check-safety.test.mjs; 58 expo-live-check tests in total); 10 negative controls on the implementation each made tests fail and the file was restored byte-for-byte; node --test, format:check, lint, typecheck, pnpm test 682, audit:diff exit 0 and git diff --check all pass; offline mobile:check exit 0; live diagnostic exit 1 INCOMPATIBLE (installed 57.0.28 below ~57.0.30).",
-      "notVerified": "The new workflow has not run on GitHub. A real network failure was exercised only through unit tests with a stubbed fetch."
+      "notVerified": "The workflow ran on GitHub in run 38873087599 (INCOMPATIBLE reported with a visible warning). A real network failure was exercised only through unit tests with a stubbed fetch, and the job summary was not independently read from the logs."
     }
   }
 }

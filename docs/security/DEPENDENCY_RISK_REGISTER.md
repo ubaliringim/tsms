@@ -772,3 +772,5 @@ hiding anything.
   `1` with none), or output that is not the expected JSON is an error, never a pass.
 
 Run it locally with `pnpm audit:diff`.
+
+Hosted verification (2026-10-16, run [38873087599](https://github.com/ubaliringim/tsms/actions/runs/38873087599), commit `3c01a21`): `security-audit-diff` succeeded on exactly the two baseline findings, and `security-audit` failed on exactly GHSA-86w9-cpqp-85rv and GHSA-vfj7-8cjw-p6xm. Both advisories remain open, unsuppressed and unresolved, and the workflow remains red.

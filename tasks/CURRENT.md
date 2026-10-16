@@ -1,16 +1,18 @@
-# Current task: Stage 2.9 - Controlled security remediation (REMEDIATION IMPLEMENTED / LOCALLY VALIDATED EXCEPT ONE EXTERNAL FAILURE / UNDER OWNER REVIEW)
+# Current task: none authorized. Stage 2.9 - Controlled security remediation is ACCEPTED / HOSTED VERIFIED / CLOSED (development)
 
 Owner: TeamStack Technologies LTD
 
 Stages 2.1 through 2.8: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall: NOT ACCEPTED.
-**Stage 2.9: REMEDIATION IMPLEMENTED / LOCALLY VALIDATED EXCEPT ONE EXTERNAL FAILURE / UNDER OWNER REVIEW.** Not committed, not pushed, not hosted-verified, not accepted, not closed.
+**Stage 2.9: ACCEPTED / HOSTED VERIFIED / CLOSED for development (owner decision, 2026-10-16).** Implementation commit `3c01a217c4d6202d39ac6f496746e999d48e4379`, hosted run [38873087599](https://github.com/ubaliringim/tsms/actions/runs/38873087599).
 Stage 2.10: NOT STARTED / UNAUTHORIZED. Production deployment: NOT AUTHORIZED.
 
-**Status (2026-10-16): Stage 2.9 is IN PROGRESS and awaits owner review and approval.** Expo 57.0.28 is installed. The CI compatibility gate is
-now offline and passes; a separate informational live diagnostic currently reports the installed Expo patch BELOW Expo's advertised minimum
-(`~57.0.30`). The online `pnpm mobile:check` therefore still fails locally. Nothing is committed, pushed, hosted-verified, accepted or closed.
+## Stage 2.9 closure record (2026-10-16)
 
-## Stage 2.9 remediation (baseline `64ff6c49e7006c95de1cb609257758c5ae588cc9`, uncommitted)
+Stage 2.9 is ACCEPTED / HOSTED VERIFIED / CLOSED for development (owner decision, 2026-10-16). Implementation commit `3c01a217c4d6202d39ac6f496746e999d48e4379` (`feat(security): complete Stage 2.9 remediation and validation tooling`); hosted run [38873087599](https://github.com/ubaliringim/tsms/actions/runs/38873087599) on that exact SHA (push to main): `validate` = **success** (install, db:generate, `pnpm check`, `pnpm test:integration`, `EXPO_OFFLINE=1 pnpm mobile:check`, `pnpm mobile:export`, `pnpm smoke`, and the clean-tree check), `security-audit-diff` = **success** (findings exactly the two documented), `security-audit` = **failure, expected, on exactly GHSA-86w9-cpqp-85rv and GHSA-vfj7-8cjw-p6xm**, `expo-live-diagnostic` = job conclusion failure by design (informational, `continue-on-error`) with result **INCOMPATIBLE**: installed expo 57.0.28 is below the advertised `~57.0.30`, shown as a workflow warning annotation. Overall workflow: **FAILURE / RED, not green.** Hosted counts: 682 unit/toolchain passed (redis 12, database 17, worker 4, api 308, config 118, web 109, node:test 114), 446 integration passed (redis 66, database 35, api 320, web 25), 27 smoke assertions, Android export of 578 modules. Browser tests are NOT part of hosted CI (16 passed locally in Chrome). The job summary file was written by the script and is viewable on the run page; it was not independently read from the logs.
+
+Retained after closure (closure is not production readiness; production deployment is NOT AUTHORIZED): F-04 targeted account lockout is unresolved; F-05 (shared source-IP bucket behind the same-origin web proxy) is a production deployment blocker; the production ingress and TLS topology is undecided; the CSP is partial; browser tests are local-only; there is no recovery email provider and no idle session expiry; forgot still answers 503 for an ineligible address when the Argon2id semaphore is saturated while an eligible address answers 202; an account at its own success limit refuses faster than an unknown address; recovery issuance can wait on a long reset of the same user and answer 503; the Stage 2.6 and 2.7 limitations remain; both dependency advisories (node-forge GHSA-86w9-cpqp-85rv, braces GHSA-vfj7-8cjw-p6xm) remain open and unsuppressed; the online `pnpm mobile:check` fails while expo 57.0.28 is below the advertised `~57.0.30` (a later bump needs `@expo/cli` 57.0.31 and `babel-preset-expo` 57.0.16, with no release-age exclusions); and Expo's remote requirements must be reviewed before any production deployment. Stage 2 overall: NOT ACCEPTED. Stage 2.10: NOT STARTED / UNAUTHORIZED.
+
+## Stage 2.9 remediation (baseline `64ff6c49e7006c95de1cb609257758c5ae588cc9`, implemented in `3c01a21`)
 
 The owner authorized implementing and locally validating corrections for F-01, F-02, F-03, F-06, F-07, F-08 and F-09, even where they
 revise accepted Stage 2.4 or 2.6 behaviour. Each defect was first reproduced on a dedicated Redis database and the guarded test database.
@@ -60,14 +62,14 @@ revise accepted Stage 2.4 or 2.6 behaviour. Each defect was first reproduced on 
 
 **Expo dependency state and CI compatibility gate (2026-10-15/16)**
 
-- Working tree (uncommitted): `apps/student-mobile/package.json` pins `expo` 57.0.28; `pnpm-lock.yaml` carries nine matching bumps (`@expo/cli` 57.0.29, `@expo/fingerprint` 0.20.14, `@expo/inline-modules` 0.1.8, `@expo/local-build-cache-provider` 57.0.9, `@expo/prebuild-config` 57.0.18, `babel-preset-expo` 57.0.15, `expo-modules-autolinking` 57.0.15, `expo-modules-core` 57.0.22, `expo-modules-jsi` 57.1.2). `pnpm-workspace.yaml` is unmodified: no `minimumReleaseAgeExclude` entry was added and `minimumReleaseAgeStrict: true` is intact. An earlier note here said the bumps needed ten exclusions and had not been made; that was true only before the 24-hour window passed and is superseded.
+- Committed in `3c01a21`: `apps/student-mobile/package.json` pins `expo` 57.0.28; `pnpm-lock.yaml` carries nine matching bumps (`@expo/cli` 57.0.29, `@expo/fingerprint` 0.20.14, `@expo/inline-modules` 0.1.8, `@expo/local-build-cache-provider` 57.0.9, `@expo/prebuild-config` 57.0.18, `babel-preset-expo` 57.0.15, `expo-modules-autolinking` 57.0.15, `expo-modules-core` 57.0.22, `expo-modules-jsi` 57.1.2). `pnpm-workspace.yaml` is unmodified: no `minimumReleaseAgeExclude` entry was added and `minimumReleaseAgeStrict: true` is intact. An earlier note here said the bumps needed ten exclusions and had not been made; that was true only before the 24-hour window passed and is superseded.
 - Why the gate changed: `expo install --check` takes the minimum `expo` patch from Expo's server, which overrides the bundled metadata of the installed `expo`. That floor moved four times in nine days, so a gate that follows it turns red for reasons outside this repository and cannot be fixed until the 24-hour window passes.
 - `.github/workflows/ci.yml`: the `validate` job runs `EXPO_OFFLINE=1 pnpm mobile:check` exactly once. The offline run validates against the installed SDK's bundled metadata (today only `react` and `react-native`). It does NOT validate Expo's advertised minimum `expo` patch, server-pushed corrections, packages outside the bundled map, or anything native.
 - New job `expo-live-diagnostic` runs `pnpm mobile:check:live` (`scripts/expo-live-check.mjs`): informational, `continue-on-error: true` on that job only, emits a `::warning` annotation and a job summary. It reports COMPATIBLE (exit 0), INCOMPATIBLE (exit 1) or INDETERMINATE (exit 2). It does not replace the offline gate and does not touch `security-audit` or `security-audit-diff`, which are unchanged.
 - `pnpm mobile:check` is unchanged for developers. Expo's remote requirements must still be reviewed before production deployment. Specification: [docs/architecture/MOBILE_COMPATIBILITY.md](../docs/architecture/MOBILE_COMPATIBILITY.md).
 - Files for this change: `.github/workflows/ci.yml`, `package.json` (scripts `mobile:check:live` and the test list), `scripts/expo-live-check.mjs` (new), `tests/expo-live-check.test.mjs` and `tests/expo-live-check-safety.test.mjs` (new, 28 and 30 tests), `docs/architecture/MOBILE_COMPATIBILITY.md` (new), `README.md`, `docs/security/PRODUCTION_CONFIGURATION.md`.
 - Diagnostic script defects D1 and D2 (found in the pre-commit review) were FIXED with owner authorization and are verified locally. D1: any unexpected exception (including a module or command that cannot be resolved) is INDETERMINATE with exit 2, a warning and a summary, never a confirmed INCOMPATIBLE. D2: all external text (server responses, CLI stdout and stderr, dependency names and ranges, exception messages) is neutralized at the output boundary for the plain log, the workflow annotation and the Markdown summary. 30 new tests, and 10 negative controls on the implementation (neutralization removed or weakened, exceptions rethrown or exiting 1, annotation encoding removed, summary fence shortened, report lines or CLI excerpts left raw, the contradiction rule removed) each made tests fail, and the file was restored byte-for-byte. Not verified: a run on GitHub itself.
-- Not verified: the new workflow has not run on GitHub; a real network failure was exercised only through unit tests with a stubbed fetch.
+- Hosted: the workflow ran on GitHub in run 38873087599 on the exact commit and the diagnostic reported INCOMPATIBLE with a visible warning annotation (see the closure record). Not verified: a real network failure was exercised only through unit tests with a stubbed fetch, and the job summary was not independently read from the logs.
 
 **Remaining unresolved findings**
 
@@ -78,9 +80,7 @@ revise accepted Stage 2.4 or 2.6 behaviour. Each defect was first reproduced on 
   answers `202` (pre-existing; the new budget refusal is deliberately swallowed there, but saturation is not).
 - Both dependency advisories remain open and unsuppressed.
 
-**Exact next action:** owner review of the Stage 2.9 remediation and of the Expo CI change below, a decision on when to move Expo to 57.0.30
-(after about 2026-10-16 14:41 UTC, with no release-age exclusions), and explicit authorization before any commit or push.
-**DO NOT** commit, push, deploy, close Stage 2.9, or begin Stage 2.10.
+**Exact next action:** await separate explicit owner authorization. A move of Expo to 57.0.30 (eligible after about 2026-10-16 14:41 UTC, with no release-age exclusions) is an open owner decision. **DO NOT** deploy, start Stage 2.10 or Stage 3, add release-age exclusions, suppress or relabel the two dependency advisories, resolve F-04 or F-05 without authorization, or touch `apps/api/probe.txt`.
 
 ---
 

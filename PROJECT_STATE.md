@@ -16,17 +16,14 @@ Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Latest substage: **Stage 2.9 - Security review and controlled remediation** is REMEDIATION IMPLEMENTED / LOCALLY VALIDATED EXCEPT ONE EXTERNAL FAILURE / UNDER OWNER REVIEW. It is **not committed, not pushed,
-not hosted-verified, not accepted, and not closed.** Stage 2.8 is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-12),
-as are Stages 2.1-2.7, for the accepted development scope. Stage 2 overall: NOT ACCEPTED. Stage 2.10: NOT STARTED /
-UNAUTHORIZED. Production deployment: NOT AUTHORIZED. Closure is not production readiness.
+Latest substage: **Stage 2.9 - Security review and controlled remediation** is ACCEPTED / HOSTED VERIFIED / CLOSED for development (owner decision, 2026-10-16) on implementation commit `3c01a217c4d6202d39ac6f496746e999d48e4379`, hosted run [38873087599](https://github.com/ubaliringim/tsms/actions/runs/38873087599). Stages 2.1-2.8 are likewise ACCEPTED / HOSTED VERIFIED / CLOSED for the accepted development scope. Stage 2 overall: NOT ACCEPTED. Stage 2.10: NOT STARTED / UNAUTHORIZED. Production deployment: NOT AUTHORIZED. Closure is not production readiness.
 
-Stage 2.9 remediation (baseline `64ff6c4`, uncommitted): corrections for F-01, F-02, F-03, F-06, F-07, F-08 and F-09 from the read-only
+Stage 2.9 remediation (baseline `64ff6c4`, committed as `3c01a21`): corrections for F-01, F-02, F-03, F-06, F-07, F-08 and F-09 from the read-only
 review, each reproduced on isolated infrastructure first. They revise accepted Stage 2.4 and 2.6 behaviour with owner authorization.
 Details, evidence and the exact test counts are in tasks/CURRENT.md; the semantics are in docs/security/RATE_LIMITING.md,
 AUTH_API.md, PASSWORD_RECOVERY.md and PRODUCTION_CONFIGURATION.md. **F-04 and F-05 were not changed.** The shared source-bucket behind
 the web proxy remains an unresolved deployment blocker. A final inspection found and fixed one further F-01 gap (a policy-invalid login
-spent the global budget without hashing) and added real-handshake TLS tests. **Stage 2.9 is IN PROGRESS and awaits owner review and approval; it is not accepted or closed.**
+spent the global budget without hashing) and added real-handshake TLS tests. **Stage 2.9 is accepted and closed for development; see the closure record below.**
 
 Expo state (2026-10-16): expo 57.0.28 is installed (package.json plus nine matching lockfile bumps, with no `minimumReleaseAgeExclude`
 entry and `minimumReleaseAgeStrict` intact; `pnpm-workspace.yaml` is unmodified). Expo's server now advertises `expo ~57.0.30`, so the
@@ -38,6 +35,12 @@ installed 57.0.28 is below the advertised `~57.0.30`. It does not replace the of
 remote requirements must still be reviewed before production. See docs/architecture/MOBILE_COMPATIBILITY.md. Two defects found in the diagnostic script (an unexpected exception exited 1 instead of 2; unsanitized CLI or server text could inject workflow-command lines into the log) were fixed and verified locally with 30 new tests and 10 negative controls. Local evidence: pnpm test 682 (node:test 114), integration 446, smoke 27,
 Android export 578 modules, Chrome E2E 16, `audit:diff` exit 0, and `pnpm audit --audit-level=high` still failing on exactly the two known
 advisories. F-04 and F-05 remain unresolved.
+
+### Stage 2.9 closure record (2026-10-16)
+
+Stage 2.9 is ACCEPTED / HOSTED VERIFIED / CLOSED for development (owner decision, 2026-10-16). Implementation commit `3c01a217c4d6202d39ac6f496746e999d48e4379` (`feat(security): complete Stage 2.9 remediation and validation tooling`); hosted run [38873087599](https://github.com/ubaliringim/tsms/actions/runs/38873087599) on that exact SHA (push to main): `validate` = **success** (install, db:generate, `pnpm check`, `pnpm test:integration`, `EXPO_OFFLINE=1 pnpm mobile:check`, `pnpm mobile:export`, `pnpm smoke`, and the clean-tree check), `security-audit-diff` = **success** (findings exactly the two documented), `security-audit` = **failure, expected, on exactly GHSA-86w9-cpqp-85rv and GHSA-vfj7-8cjw-p6xm**, `expo-live-diagnostic` = job conclusion failure by design (informational, `continue-on-error`) with result **INCOMPATIBLE**: installed expo 57.0.28 is below the advertised `~57.0.30`, shown as a workflow warning annotation. Overall workflow: **FAILURE / RED, not green.** Hosted counts: 682 unit/toolchain passed (redis 12, database 17, worker 4, api 308, config 118, web 109, node:test 114), 446 integration passed (redis 66, database 35, api 320, web 25), 27 smoke assertions, Android export of 578 modules. Browser tests are NOT part of hosted CI (16 passed locally in Chrome). The job summary file was written by the script and is viewable on the run page; it was not independently read from the logs.
+
+Retained after closure (closure is not production readiness; production deployment is NOT AUTHORIZED): F-04 targeted account lockout is unresolved; F-05 (shared source-IP bucket behind the same-origin web proxy) is a production deployment blocker; the production ingress and TLS topology is undecided; the CSP is partial; browser tests are local-only; there is no recovery email provider and no idle session expiry; forgot still answers 503 for an ineligible address when the Argon2id semaphore is saturated while an eligible address answers 202; an account at its own success limit refuses faster than an unknown address; recovery issuance can wait on a long reset of the same user and answer 503; the Stage 2.6 and 2.7 limitations remain; both dependency advisories (node-forge GHSA-86w9-cpqp-85rv, braces GHSA-vfj7-8cjw-p6xm) remain open and unsuppressed; the online `pnpm mobile:check` fails while expo 57.0.28 is below the advertised `~57.0.30` (a later bump needs `@expo/cli` 57.0.31 and `babel-preset-expo` 57.0.16, with no release-age exclusions); and Expo's remote requirements must be reviewed before any production deployment. Stage 2 overall: NOT ACCEPTED. Stage 2.10: NOT STARTED / UNAUTHORIZED.
 
 Stage 2.8: the web app signs in, restores, and signs out through a same-origin proxy of three API routes. No CORS, no API change, no
 migration. Specification and risks: [docs/security/WEB_AUTHENTICATION.md](docs/security/WEB_AUTHENTICATION.md). Hosted evidence and the
