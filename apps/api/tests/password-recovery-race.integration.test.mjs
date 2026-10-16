@@ -6,12 +6,11 @@ import { createDatabaseClient, closeDatabase } from '@tsms/database';
 import { assertDisposableTestDatabase } from '@tsms/database/testing';
 import { createRedisClient, closeRedis } from '@tsms/redis';
 import { createApplication } from '../dist/application.js';
-import { Argon2idAdmissionService } from '../dist/identity/argon2id-admission.service.js';
-import { ARGON2ID_CONCURRENCY } from '../dist/identity/auth-abuse-policy.js';
+import { admissionFor, successMeterFor } from './support/stage29-wiring.mjs';
 import { SecurityLog } from '../dist/identity/security-log.js';
 import { SecurityEventRecorder } from '../dist/identity/security-event-recorder.js';
 import { resetRateLimitState } from './support/rate-limit-state.mjs';
-import { hashPassword } from '../dist/identity/password-hasher.js';
+import { hashPassword, verifyPassword } from '../dist/identity/password-hasher.js';
 import { PasswordCredentialService } from '../dist/identity/password-credential.service.js';
 import { SessionService } from '../dist/identity/session.service.js';
 import { AuthService } from '../dist/identity/auth.service.js';
@@ -58,7 +57,7 @@ let credentials, sessions, recovery;
  * means the parked participants hold genuine slots and the suite exercises the production mechanism
  * rather than a bypass of it.
  */
-const argon2idAdmission = (client) => new Argon2idAdmissionService(client, ARGON2ID_CONCURRENCY);
+const argon2idAdmission = (client) => admissionFor(client);
 
 /**
  * Stage 2.7 collaborators.
@@ -75,20 +74,30 @@ const events = () => new SecurityEventRecorder(db, securityLog);
 /**
  * Builds a login service whose password verification can be parked.
  *
- * The wrapper delegates to the accepted credential service and then blocks, which places the login
- * precisely after verification and before the protected transaction.
+ * Stage 2.9. A login now performs its one verification through an injected verifier, so that is the seam. The
+ * wrapper runs the real verification and then blocks, which places the login precisely after verification and
+ * before the success-budget charge and the protected transaction - the same window the earlier credential-service
+ * wrapper parked it in.
  */
 function authServiceWithPausedVerification(control) {
-  const pausing = new PasswordCredentialService(db);
-  pausing.verifyCredentialVersioned = async (...args) => {
-    const outcome = await credentials.verifyCredentialVersioned(...args);
+  const pausingVerify = async (...args) => {
+    const outcome = await verifyPassword(...args);
     if (control) {
       control.signal();
       await control.wait();
     }
     return outcome;
   };
-  return new AuthService(db, pausing, sessions, argon2idAdmission(redis), events(), securityLog);
+  return new AuthService(
+    db,
+    sessions,
+    argon2idAdmission(redis),
+    events(),
+    securityLog,
+    successMeterFor(redis),
+    () => new Date(),
+    pausingVerify,
+  );
 }
 
 /**

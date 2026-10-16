@@ -23,10 +23,8 @@ import { hashPassword, verifyPassword } from '../dist/identity/password-hasher.j
 import { SECURITY_REQUEST_ID_HEADER } from '../dist/identity/security-request-context.js';
 import { RECOVERY_DELIVERY } from '../dist/identity/auth.module.js';
 import { AuthService } from '../dist/identity/auth.service.js';
-import { PasswordCredentialService } from '../dist/identity/password-credential.service.js';
 import { SessionService } from '../dist/identity/session.service.js';
-import { Argon2idAdmissionService } from '../dist/identity/argon2id-admission.service.js';
-import { ARGON2ID_CONCURRENCY } from '../dist/identity/auth-abuse-policy.js';
+import { admissionFor, successMeterFor } from './support/stage29-wiring.mjs';
 import { SecurityLog } from '../dist/identity/security-log.js';
 import { SecurityEventRecorder } from '../dist/identity/security-event-recorder.js';
 import { PasswordRecoveryService } from '../dist/identity/password-recovery.service.js';
@@ -42,11 +40,11 @@ function authServiceOver(handle) {
   const log = silentSecurityLog();
   return new AuthService(
     handle,
-    new PasswordCredentialService(handle),
     new SessionService(handle),
-    new Argon2idAdmissionService(redisClient, ARGON2ID_CONCURRENCY),
+    admissionFor(redisClient),
     new SecurityEventRecorder(handle, log),
     log,
+    successMeterFor(redisClient),
   );
 }
 
@@ -56,7 +54,7 @@ function recoveryServiceOver(handle) {
     handle,
     new InMemoryRecoveryDelivery(),
     { mode: 'development-only', urlBase: 'https://app.example.test/account/recover' },
-    new Argon2idAdmissionService(redisClient, ARGON2ID_CONCURRENCY),
+    admissionFor(redisClient),
     new SecurityEventRecorder(handle, log),
     log,
   );
@@ -565,17 +563,20 @@ describe('event volume is bounded by the abuse limiter, not by attacker effort',
     expect(await typesFor(user.id)).toEqual(['LOGOUT']);
   });
 
-  it('does not meter successful logins per account, so LOGIN_SUCCEEDED volume is a known gap', async () => {
-    // Documented rather than hidden: successful logins are refunded by design (charging them would let one
-    // address lock out its colleagues), so LOGIN_SUCCEEDED is bounded by the global Argon2id budget and by
-    // nothing per account or per source. This pins that fact, so any change to it is a visible decision.
+  it('bounds successful logins per account, so LOGIN_SUCCEEDED volume has a per-account ceiling', async () => {
+    // Stage 2.9 closes what was documented here as a known gap. A successful login is still refunded on the
+    // credential meters (charging it would let one address lock out its colleagues), but it now spends a
+    // per-account success budget of 10 per 10 minutes. The ceiling applies to sessions and to events alike,
+    // and a refused login creates neither.
     const user = await account();
+    const statuses = [];
     for (let attempt = 0; attempt < 12; attempt += 1) {
-      expect((await login(user.email, PASSWORD)).status).toBe(200);
+      statuses.push((await login(user.email, PASSWORD)).status);
     }
+    expect(statuses).toEqual([...Array(10).fill(200), 429, 429]);
     const succeeded = (await typesFor(user.id)).filter((type) => type === 'LOGIN_SUCCEEDED');
-    expect(succeeded).toHaveLength(12);
-    expect(await db.session.count({ where: { userId: user.id } })).toBe(12);
+    expect(succeeded).toHaveLength(10);
+    expect(await db.session.count({ where: { userId: user.id } })).toBe(10);
   });
 });
 

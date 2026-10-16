@@ -12,7 +12,7 @@
     "export:android": "expo export --platform android"
   },
   "dependencies": {
-    "expo": "57.0.27",
+    "expo": "57.0.28",
     "react": "19.2.3",
     "react-native": "0.86.3"
   },

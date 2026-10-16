@@ -750,3 +750,25 @@ revoke a temporary disposition on behalf of the project owner.
 Owner acceptances recorded here are dated, scoped by advisory ID, and valid only until a review trigger
 fires. They are not blanket approvals of transitive tooling and are not precedent for accepting future
 findings.
+
+## Differential audit (Stage 2.9)
+
+`pnpm audit --audit-level=high` fails on the two advisories above, and that is correct and unchanged. Because it
+fails on them it cannot reveal a third: the workflow is red before a new finding and red after it.
+`scripts/audit-diff.mjs`, run by the separate `security-audit-diff` job, closes that gap without suppressing or
+hiding anything.
+
+- **Baseline.** [audit-baseline.json](audit-baseline.json) lists exactly the accepted findings (identifier,
+  package, severity, vulnerable versions). It is edited by hand, only together with this register and an owner
+  decision. A test fails if an identifier in the baseline is not named here. The script never rewrites it.
+- **Result.** The job is green only when the live findings equal the baseline. It is red for a new advisory at
+  moderate severity or above, for any changed finding (severity, package, or vulnerable version), for a baseline
+  advisory that is no longer reported (review it and update both files), and for any audit command failure or
+  unreadable output. A new low or informational advisory is printed as informational and does not fail it.
+- **It never means the audit is clean.** Its output states that the dependency audit still reports the findings
+  and that none is suppressed, and the `security-audit` job still fails while they exist. The workflow remains red.
+- **Command failures are separate from vulnerability exit codes.** `pnpm audit` exits `1` when it finds
+  vulnerabilities, which is expected. Any other status, a status that contradicts the output (findings with `0`, or
+  `1` with none), or output that is not the expected JSON is an error, never a pass.
+
+Run it locally with `pnpm audit:diff`.

@@ -265,6 +265,40 @@ new-password success, replay refusal, concurrent single-redemption, rollback on 
 isolation from other users, and the full Origin and body-validation matrix. Every fixture is scoped to
 its own user ids; no assertion depends on a global row count.
 
+## Stage 2.9 corrections
+
+- **Issuance is serialised per user.** Issuing a token supersedes the earlier ones and inserts a new one. That was
+  a batch with no lock, so two concurrent requests each superseded only what they could see and each inserted a
+  token: reproduced as up to three simultaneously valid tokens (11 of 12 concurrent rounds). The transaction now
+  takes the same per-user advisory lock login and reset take, so issuance is strictly ordered against other
+  issuance, against reset, and against login for that user, and independent across users. After three
+  simultaneous requests, or two after an earlier token, exactly one token is live. Single use and supersession are
+  unchanged: a successful reset still supersedes every other outstanding token in its own transaction.
+- **A hashing failure is no longer reported as a bad password.** A password-policy violation is decided before
+  any Argon2id slot or budget is taken and answers `400`. Only the hasher's own policy rejection maps to that
+  response; any other hashing failure (a native or allocation failure) answers the fixed `503`. In both cases the
+  token is left unconsumed and the credential is unchanged.
+- **The global Argon2id budget is charged where hashing starts.** An eligible request performs no Argon2id and
+  spends none. If the budget declines at the moment an ineligible request would have burned a verification, the
+  request still answers its fixed `202` rather than `429`, because a `429` there would distinguish an ineligible
+  address from an eligible one.
+
+### Lock ordering and the new coupling
+
+Login, reset, and issuance each take the same per-user advisory lock **first**, before any row they touch, so no
+participant can hold a row while waiting for the lock another holds; a lock-order inversion between them is not
+possible. Logout does not take the advisory lock, but takes only a row lock on its own session and waits on nothing the
+others hold, so it cannot take part in a cycle either. A mixed round of simultaneous logins, issuance, and a reset
+completes without deadlock and ends consistent: at most one live token, and if the reset won, no session survives it.
+A reset that is hashing when issuance supersedes its token is refused at consumption, deterministically, and leaves
+the credential unchanged.
+
+The coupling issuance now has is that it waits for a reset of the **same user** that holds the lock. The interactive
+transaction has Prisma's default 5 s limit, so a reset holding the lock longer (the high-session-count case in
+SECURITY_EVENTS.md) can make that user's `forgot` answer the fixed `503` instead of `202`. It affects only an eligible
+address, because an ineligible one never takes the lock, and it requires the attacker to be mid-reset on that account,
+which needs a valid token. It is recorded as a limitation, not removed.
+
 ## What is deliberately not implemented
 
 No registration or signup, no email verification, no MFA, no tenant or school enrolment, no role or

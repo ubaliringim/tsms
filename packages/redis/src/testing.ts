@@ -9,6 +9,9 @@
  * Rejection messages never include the URL, because the URL contains a password.
  */
 
+/** Hosts a destructive test may connect to. Matches the database guard. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
 function parseRedisUrl(connectionString: string): URL {
   let parsed: URL;
   try {
@@ -48,6 +51,13 @@ export function assertDisposableTestRedis(connectionString: string): string {
   if (redisDatabaseIndexOf(connectionString) === 0) {
     throw new Error(
       'Refusing to run Redis integration tests: the test Redis URL must select a non-zero logical database. No connection was opened.',
+    );
+  }
+  // Stage 2.9. The tests delete keys in this database, so it must be on this machine. The database guard has
+  // always required the same of PostgreSQL; without it a mistyped `TEST_REDIS_URL` could point at a real Redis.
+  if (!LOOPBACK_HOSTS.has(parseRedisUrl(connectionString).hostname)) {
+    throw new Error(
+      'Refusing to run Redis integration tests: the host must be a loopback address. No connection was opened.',
     );
   }
   return connectionString;

@@ -14,20 +14,22 @@ the routes that were previously unmetered.
 The accepted stages closed enumeration and made guessing expensive per request. What remained was the
 volume dimension: nothing stopped an attacker from making a million requests.
 
-| Threat                                | Control                                                     |
-| ------------------------------------- | ----------------------------------------------------------- |
-| Credential stuffing from one source   | Login per-source meter                                      |
-| Distributed guessing on one account   | Login per-account meter, keyed on the normalised address    |
-| Repeated invalid credentials          | Same two meters, charged on failure rather than on attempt  |
-| Argon2id resource exhaustion          | Global verification budget, charged before the handler runs |
-| Email flooding one victim             | Recovery per-target meter, charged on every request         |
-| Recovery token brute force            | Reset per-token meter plus per-source meter                 |
-| Recovery token-request abuse          | Recovery per-target meter, 3 per hour                       |
-| Request flooding of cheap endpoints   | `me` and `logout` per-source meters                         |
-| Redis-key reconnaissance              | Every subject is an HMAC; no raw identifier in a key        |
-| Per-instance limit bypass             | All state is in Redis, shared by every API instance         |
-| Forged client identity                | Transport peer only; every forwarding header ignored        |
-| Protection loss during a Redis outage | Fail closed on login and both recovery endpoints            |
+| Threat                                | Control                                                        |
+| ------------------------------------- | -------------------------------------------------------------- |
+| Credential stuffing from one source   | Login per-source meter                                         |
+| Distributed guessing on one account   | Login per-account meter, keyed on the normalised address       |
+| Repeated invalid credentials          | Same two meters, charged on failure rather than on attempt     |
+| Argon2id resource exhaustion          | Global verification budget, charged where Argon2id is admitted |
+| Free request flooding (malformed)     | Malformed-request meter, 30 per 5 min per source               |
+| One account monopolising logins       | Per-account success meter, 10 per 10 min                       |
+| Email flooding one victim             | Recovery per-target meter, charged on every request            |
+| Recovery token brute force            | Reset per-token meter plus per-source meter                    |
+| Recovery token-request abuse          | Recovery per-target meter, 3 per hour                          |
+| Request flooding of cheap endpoints   | `me` and `logout` per-source meters                            |
+| Redis-key reconnaissance              | Every subject is an HMAC; no raw identifier in a key           |
+| Per-instance limit bypass             | All state is in Redis, shared by every API instance            |
+| Forged client identity                | Transport peer only; every forwarding header ignored           |
+| Protection loss during a Redis outage | Fail closed on login and both recovery endpoints               |
 
 Out of scope by authorization: registration, MFA, CAPTCHA, account lockout columns, and
 `AuthenticationEvent` recording (Stage 2.7).
@@ -46,7 +48,9 @@ operator who can raise a limit from a shell profile can also disable the control
 | `POST /auth/password/reset`  | 10 per 15 min        | 10 per 15 min                | failures          |
 | `GET /auth/me`               | 120 per 1 min        | none                         | requests          |
 | `POST /auth/logout`          | 30 per 1 min         | none                         | requests          |
-| Global verification budget   | 120 per 1 min        | one key, whole deployment    | requests          |
+| Global verification budget   | 120 per 1 min        | one key, whole deployment    | Argon2id admitted |
+| Malformed request            | 30 per 5 min         | none                         | requests          |
+| Successful login             | none                 | 10 per 10 min (per account)  | successes         |
 
 Each bucket is a token bucket whose capacity is also its sustained rate, so there is no separate burst
 parameter to misconfigure. Token bucket rather than a fixed window, so a client cannot send twice the
@@ -90,15 +94,16 @@ flight" was a real bypass, not a theoretical limitation.
 Admission now **reserves** a token on every dimension, atomically, so simultaneous requests contend for real
 state. The reservation is then settled by outcome:
 
-| Outcome                          | Reservation   | Why                                                                   |
-| -------------------------------- | ------------- | --------------------------------------------------------------------- |
-| successful login or reset        | **refunded**  | A correct sign-in must cost nothing                                   |
-| `AUTHENTICATION_FAILED` (login)  | **kept**      | The guessing attempts the meter exists to count                       |
-| `RECOVERY_TOKEN_INVALID` (reset) | **kept**      | Unknown, expired, consumed, superseded, or malformed token            |
-| malformed body, untrusted origin | **refunded**  | Never reached a verification                                          |
-| password-policy violation        | **refunded**  | Token was valid; nothing was guessed                                  |
-| operational failure              | **refunded**  | Not an authentication attempt                                         |
-| guard refusal (`429` or `503`)   | **untouched** | The meter refused it and wrote nothing, so there is nothing to return |
+| Outcome                          | Reservation        | Why                                                                   |
+| -------------------------------- | ------------------ | --------------------------------------------------------------------- |
+| successful login or reset        | **refunded**       | A correct sign-in must cost nothing                                   |
+| `AUTHENTICATION_FAILED` (login)  | **kept**           | The guessing attempts the meter exists to count                       |
+| `RECOVERY_TOKEN_INVALID` (reset) | **kept**           | Unknown, expired, consumed, superseded, or malformed token            |
+| malformed body                   | **never reserved** | Metered on its own meter (Stage 2.9); there is nothing to return      |
+| untrusted origin                 | **untouched**      | Refused by the origin guard before the abuse guard runs               |
+| password-policy violation        | **refunded**       | Token was valid; nothing was guessed                                  |
+| operational failure              | **refunded**       | Not an authentication attempt                                         |
+| guard refusal (`429` or `503`)   | **untouched**      | The meter refused it and wrote nothing, so there is nothing to return |
 
 The refusal set is exported as `CHARGED_ERROR_CODES` and asserted directly, so it cannot change silently
 if a handler is refactored.
@@ -108,7 +113,7 @@ caller one unit of its own allowance. Surfacing it would turn an ordinary wrong 
 which is both wrong and a way to distinguish outcomes.
 
 **The global verification budget is never refunded.** It measures work _started_, and returning it would
-undo the bound on Argon2id work entirely.
+undo the bound on Argon2id work entirely. Since Stage 2.9 it is also not charged at admission: see below.
 
 This is what makes "a legitimate attempt is free" an **enforced property** rather than an intention. A test
 asserts that a full allowance of correct sign-ins is followed by a full allowance of metered failures, which
@@ -121,6 +126,85 @@ holds only if every reservation came back.
 - The same holds when the burst is split across **independently created API instances** sharing one Redis.
 - Sequential and concurrent traffic are bounded identically. Concurrency changed the mechanism, not the limit.
 - Legitimate traffic at or below the allowance is admitted outright, and its budget is restored.
+
+## Stage 2.9 corrections (provisional)
+
+A security review reproduced two defects in how the global Argon2id budget was spent, and a third in how login
+success was limited. All three are corrected; the numbers below are provisional.
+
+### What was wrong (reproduced, bounded, on isolated infrastructure)
+
+- **Admission spent the global budget for requests that never hashed.** Admission reserved the credential meters
+  and the global budget in one step. A request the controller then rejected as malformed had its credential
+  reservations returned, but the global budget is never returned, so it was spent for nothing. One anonymous
+  client sending about 2.7 malformed requests per second, with a trusted `Origin` header, kept the budget at zero:
+  130 malformed logins drained it to 0.66 while the source bucket stayed full at 10, a correct login for an
+  unrelated account then received `429`, and in a sustained run all 6 correct logins attempted received `429`.
+  No Argon2id operation ran during any of it. The reset endpoint behaved the same.
+- **Successful logins were free on every meter except the global budget.** One account looping logins at about 5
+  per second created 195 sessions and 195 `LOGIN_SUCCEEDED` rows, left its source and account meters full, emptied
+  the global budget, and caused a different user's correct login to be refused.
+- Both are independent of the shared-source problem below: they hold with correct client attribution.
+
+### What changed
+
+| Change                                             | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Global budget charged at the admission choke point | `Argon2idAdmissionService.acquire` charges one token, atomically, after the semaphore slot is granted and before any hashing. Every Argon2id operation passes through it, so there is exactly one charge per operation and none for a request that performs none. Admission only _checks_ the budget, so an exhausted budget still refuses cheaply with `429`.                                                           |
+| Exhausted at the charge point                      | The slot is released, no hashing runs, and the request answers `429` with a bounded `Retry-After`. Redis failure still fails closed (`503`), and the slot is released on every refusal and every exception.                                                                                                                                                                                                              |
+| Malformed-request meter                            | The guard decides whether a body is well-formed with the same function the controller uses (`parseAuthBody`), so the two cannot disagree. A malformed request is metered on one per-source bucket (30 per 5 min per endpoint) and on nothing else. It reserves nothing, so nothing is refunded for it, and it never names an account, so it cannot consume a victim's budget. It fails closed when Redis is unavailable. |
+| Per-account success meter                          | A login that has just authenticated spends one token of a per-account bucket (10 per 10 min) before any session exists. A refusal therefore creates no session and no `LOGIN_SUCCEEDED` event. The token is returned if session creation then fails. Admission also checks it, so when an account is at its limit a wrong password and the correct one are refused identically. Failed attempts never touch it.          |
+| Refund only what was reserved                      | The reservation interceptor refunds only when the guard recorded that a reservation was taken. Refunding a request that reserved nothing would credit the caller with tokens it never spent.                                                                                                                                                                                                                             |
+
+### Properties and limits
+
+- A single account can now create at most 10 sessions and 10 `LOGIN_SUCCEEDED` events per 10 minutes, rather than
+  the global rate. This is a bound, not a cap on sessions: no per-user session cap, session cleanup, or idle
+  timeout was added.
+- Real hashing is still charged to the global budget, so one account can still spend at most its success allowance
+  of it. Denying the whole deployment now needs on the order of 120 distinct accounts in a minute.
+- Malformed traffic is bounded, not free: after 30 in 5 minutes from one source it is refused. Because the meter is
+  separate, that never blocks a well-formed login from the same source.
+- The 10 per 10 min and 30 per 5 min values are provisional development defaults, like every other number here.
+- A refusal raised inside the handler (the budget emptying between the admission check and the charge) is a
+  narrow race. For `forgot` it is swallowed rather than answered with `429`, because an eligible address performs no
+  Argon2id and a `429` there would reveal that the address was ineligible.
+- **The malformed-request meter is a per-source meter, so it inherits the shared-proxy attribution problem.** Behind
+  the Next.js proxy every browser reaches the API from the web server's address, so all malformed traffic
+  shares one bucket of 30 per 5 minutes: one client can exhaust it for everyone. Because the meter is separate, that
+  only refuses further _malformed_ requests; it can no longer block a well-formed login, which was the effect of
+  charging them to the login source meter. This is the same unresolved blocker as every other per-source meter, not a
+  new one, and nothing here changes source attribution.
+- Unchanged and still open: behind the Next.js proxy every browser shares one source address (the deployment
+  blocker below). That is separate from these corrections, and none of them changes source attribution.
+
+### Final inspection of the corrections
+
+A second review of the corrections above, with tests on real PostgreSQL and Redis, established:
+
+- **One charge per operation, and none for a request that hashes nothing.** A well-formed login whose password
+  fails the password policy is rejected by the verifier before Argon2id runs, on every path alike. It originally still
+  took a slot and spent a global token, which let a flood of short-password logins drain the budget without ever
+  hashing. It now takes neither. The reset path validates the new password first for the same reason.
+- **Concurrent requests cannot beat the budget.** With three tokens left, six simultaneous logins on six accounts
+  produce exactly three successes and three `429`s with `Retry-After`; sessions and events number three, every
+  reservation (including those of the refused requests) is returned, and every semaphore slot is released.
+- **Slots are released on every exit**: a refusal by the budget, and an unexpected error from the charge itself.
+- **A malformed request cannot buy back a token.** Two independent layers prevent it: the interceptor refunds only
+  when the guard recorded a reservation, and the refundable-dimension function itself returns nothing for a
+  malformed request.
+- **Redis failure still fails closed**, at admission, at the semaphore, and at the charge.
+- **The success meter cannot be over-credited**: a refund against an absent bucket creates nothing, and repeated
+  refunds are clamped at capacity. Sixteen simultaneous charges against one account yield exactly ten.
+
+**The success-meter refusal and oracles.** While an account is at its limit, the correct password and a wrong one
+receive the same `429`, with the same body and `Retry-After`, in about 5 ms either way (measured locally, supplementary
+only). The password is not consulted, so no credential oracle exists. Ordinary accounts and unknown addresses both answer
+`401` in about 220 ms and are indistinguishable from each other. One signal remains and is documented rather than hidden:
+an account at its own limit refuses quickly where an unknown address would not. It is not usable against an arbitrary
+account, because only a holder of the password can fill the bucket, so it reveals nothing to anyone who does not already
+control that account. A test pins it, so a change is a visible decision. Removing it would mean answering `401` for a
+legitimate holder for up to a minute, which was judged worse and was not done.
 
 ## Bounded simultaneous Argon2id work
 

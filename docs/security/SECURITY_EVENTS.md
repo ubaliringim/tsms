@@ -244,7 +244,9 @@ The takeover review checked the earlier claim that stored events are "inherently
 - **`LOGIN_SUCCEEDED` has no per-account bound.** An attacker holding one valid credential can create
   sessions and events at up to the global rate. This is the same rate at which the pre-existing `sessions`
   table already grows, so Stage 2.7 adds one row per row rather than a new multiplier. It is nevertheless a
-  gap, and it is pinned by a test so a change to it is a visible decision.
+  gap, and it is pinned by a test so a change to it is a visible decision. **Stage 2.9 update: now bounded per
+  account to 10 per 10 minutes (see RATE_LIMITING.md); the test pins the bound, and a refused login writes
+  neither a session nor an event.**
 - **`SESSION_REVOKED` fans out, and writing it per row had a measured failure point, since corrected.** One
   reset writes one row per live session. The original per-row write failed closed at about 20,000 live
   sessions. It is now one set-based statement (section 16) that succeeds through at least 100,000 on the
@@ -349,7 +351,8 @@ the first control, which showed it proved nothing. It was replaced.
 10. **`SESSION_REVOKED` fan-out has no per-user session cap.** A reset is one transaction, so it still fails
     closed beyond roughly 100,000 live sessions on the reference machine (section 16). That is close to the
     accepted pre-Stage-2.7 boundary and above any plausible legitimate count, but it is not removed.
-11. **`LOGIN_SUCCEEDED` is bounded only by the global Argon2id budget** (section 9).
+11. **`LOGIN_SUCCEEDED` is bounded only by the global Argon2id budget** (section 9). _Stage 2.9: it is now also
+    bounded per account, 10 per 10 minutes, so this item no longer describes the current code._
 12. **The `LOGIN_FAILED` write runs while the Argon2id slot is held**, so a slow database lengthens slot
     occupancy. The slot lease renews, so this degrades throughput rather than correctness.
 13. **Not production readiness.** Production deployment remains prohibited.

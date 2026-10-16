@@ -45,6 +45,9 @@ const context = (overrides = {}) => ({
   clientAddress: '203.0.113.10',
   normalizedEmail: 'person@example.test',
   recoveryToken: undefined,
+  // Stage 2.9: a request the controller would accept. Malformed requests are covered in
+  // auth-abuse-remediation.test.mjs.
+  wellFormed: true,
   ...overrides,
 });
 
@@ -365,12 +368,13 @@ describe('Retry-After bounds', () => {
 // --- 13. dimension composition ---------------------------------------------------
 
 describe('dimension composition', () => {
-  it('charges login on source, account, and the global verification budget', () => {
+  it('consults login on source, account, the global verification budget, and the account success budget', () => {
     const keys = dimensionsFor(SECRET, 'login', context()).map((dimension) => dimension.key);
-    expect(keys).toHaveLength(3);
+    expect(keys).toHaveLength(4);
     expect(keys).toContain(deriveAbuseKey(SECRET, 'login', 'source', '203.0.113.10'));
     expect(keys).toContain(deriveAbuseKey(SECRET, 'login', 'target', EMAIL));
     expect(keys).toContain(globalWorkloadKey(SECRET));
+    expect(keys).toContain(deriveAbuseKey(SECRET, 'login', 'success', EMAIL));
   });
 
   it('reserves every credential meter at admission so concurrent requests contend', () => {
@@ -381,10 +385,14 @@ describe('dimension composition', () => {
     // lets every simultaneous request read the same untouched bucket, which is the concurrency bypass the
     // review found.
     expect(preFlight.find((d) => d.key === sourceKey).commit).toBe(true);
-    expect(preFlight.every((dimension) => dimension.commit)).toBe(true);
-    // The global verification budget is reserved too, and unconditionally: Argon2id runs whether or not
-    // the attempt succeeds.
-    expect(preFlight.find((d) => d.key === globalWorkloadKey(SECRET)).commit).toBe(true);
+    const targetKey = deriveAbuseKey(SECRET, 'login', 'target', EMAIL);
+    expect(preFlight.find((d) => d.key === targetKey).commit).toBe(true);
+    // Stage 2.9. The global verification budget and the per-account success budget are only CHECKED at
+    // admission. They are charged where the work they measure actually happens, so a request that never
+    // reaches Argon2id or never authenticates spends neither.
+    expect(preFlight.find((d) => d.key === globalWorkloadKey(SECRET)).commit).toBe(false);
+    const successKey = deriveAbuseKey(SECRET, 'login', 'success', EMAIL);
+    expect(preFlight.find((d) => d.key === successKey).commit).toBe(false);
   });
 
   it('refunds the credential reservation for an attempt that was not abuse', () => {
@@ -400,9 +408,13 @@ describe('dimension composition', () => {
 
   it('meters password recovery by request, because a flooding request succeeds', () => {
     // A failure-metered forgot would limit nothing: flooding works precisely because each request
-    // answers 202. Every meter here must therefore be spent at admission.
+    // answers 202. Its source and target meters must therefore be spent at admission. The global Argon2id
+    // budget is only checked (Stage 2.9): an eligible request performs no Argon2id.
     const preFlight = dimensionsFor(SECRET, 'forgot', context());
-    expect(preFlight.every((dimension) => dimension.commit)).toBe(true);
+    const credential = preFlight.filter((d) => d.key !== globalWorkloadKey(SECRET));
+    expect(credential).toHaveLength(2);
+    expect(credential.every((dimension) => dimension.commit)).toBe(true);
+    expect(preFlight.find((d) => d.key === globalWorkloadKey(SECRET)).commit).toBe(false);
     // And its charges are final: refunding them would let an attacker keep issuing unboundedly by
     // interleaving requests whose outcomes are not credential failures.
     expect(refundableDimensionsFor(SECRET, 'forgot', context())).toHaveLength(0);
@@ -609,7 +621,14 @@ describe('Redis failure handling', () => {
         redis: replyingRedis([1, 0]),
       });
       const decision = await service.decide(endpoint, context({ recoveryToken: TOKEN }));
-      expect(decision).toEqual({ kind: 'allowed', retryAfterSeconds: 0, proceeds: true });
+      // Stage 2.9: `reserved` is true only where a failure-metered credential reservation was taken, because
+      // that is the only case in which a refund is owed.
+      expect(decision).toEqual({
+        kind: 'allowed',
+        reserved: endpoint === 'login' || endpoint === 'reset',
+        retryAfterSeconds: 0,
+        proceeds: true,
+      });
     }
   });
 
@@ -629,10 +648,10 @@ describe('Redis failure handling', () => {
     expect(calls).toHaveLength(1);
     const [script, keyCount, ...rest] = calls[0];
     expect(script).toContain('HMGET');
-    expect(keyCount).toBe(3);
-    expect(rest.slice(0, 3).every((key) => key.startsWith(`{${RATE_LIMIT_KEY_TAG}}:`))).toBe(true);
-    // Three keys, then capacity, window, and the commit flag for each: 3 + 3 * 3.
-    expect(rest).toHaveLength(12);
+    expect(keyCount).toBe(4);
+    expect(rest.slice(0, 4).every((key) => key.startsWith(`{${RATE_LIMIT_KEY_TAG}}:`))).toBe(true);
+    // Four keys, then capacity, window, and the commit flag for each: 4 + 4 * 3.
+    expect(rest).toHaveLength(16);
   });
 });
 

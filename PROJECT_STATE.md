@@ -4,7 +4,7 @@ Project: TSMS - TeamStack School Management System
 
 Company: TeamStack Technologies LTD
 
-Updated: 2026-10-09
+Updated: 2026-10-16
 
 Phase: Foundation
 
@@ -16,9 +16,28 @@ Stage 1 status: ACCEPTED by the project owner on 2026-10-07.
 
 Stage 0 status: ACCEPTED (owner decision, 2026-10-07). Record at tasks/completed/stage-0-engineering-foundation.md.
 
-Latest substage: **Stage 2.8 - Minimal Web Authentication Integration** is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-12),
-for the accepted development scope. Stages 2.1-2.7 likewise. Stage 2 overall: NOT ACCEPTED. **Stage 2.9: NOT STARTED /
-UNAUTHORIZED.** Production deployment: NOT AUTHORIZED. Closure is not production readiness.
+Latest substage: **Stage 2.9 - Security review and controlled remediation** is REMEDIATION IMPLEMENTED / LOCALLY VALIDATED EXCEPT ONE EXTERNAL FAILURE / UNDER OWNER REVIEW. It is **not committed, not pushed,
+not hosted-verified, not accepted, and not closed.** Stage 2.8 is ACCEPTED / HOSTED VERIFIED / CLOSED (owner decision, 2026-10-12),
+as are Stages 2.1-2.7, for the accepted development scope. Stage 2 overall: NOT ACCEPTED. Stage 2.10: NOT STARTED /
+UNAUTHORIZED. Production deployment: NOT AUTHORIZED. Closure is not production readiness.
+
+Stage 2.9 remediation (baseline `64ff6c4`, uncommitted): corrections for F-01, F-02, F-03, F-06, F-07, F-08 and F-09 from the read-only
+review, each reproduced on isolated infrastructure first. They revise accepted Stage 2.4 and 2.6 behaviour with owner authorization.
+Details, evidence and the exact test counts are in tasks/CURRENT.md; the semantics are in docs/security/RATE_LIMITING.md,
+AUTH_API.md, PASSWORD_RECOVERY.md and PRODUCTION_CONFIGURATION.md. **F-04 and F-05 were not changed.** The shared source-bucket behind
+the web proxy remains an unresolved deployment blocker. A final inspection found and fixed one further F-01 gap (a policy-invalid login
+spent the global budget without hashing) and added real-handshake TLS tests. **Stage 2.9 is IN PROGRESS and awaits owner review and approval; it is not accepted or closed.**
+
+Expo state (2026-10-16): expo 57.0.28 is installed (package.json plus nine matching lockfile bumps, with no `minimumReleaseAgeExclude`
+entry and `minimumReleaseAgeStrict` intact; `pnpm-workspace.yaml` is unmodified). Expo's server now advertises `expo ~57.0.30`, so the
+online `pnpm mobile:check` still FAILS locally (exit 1, external). 57.0.30 and its newer `@expo/cli` 57.0.31 and `babel-preset-expo`
+57.0.16 are not eligible under the 24-hour policy until about 2026-10-16 14:41 UTC, and no Expo update was made. The CI gate is now
+`EXPO_OFFLINE=1 pnpm mobile:check` (passes, exit 0; validates against the installed SDK's bundled metadata only), and a separate
+informational job `expo-live-diagnostic` (`pnpm mobile:check:live`, `continue-on-error` on that job only) currently reports INCOMPATIBLE:
+installed 57.0.28 is below the advertised `~57.0.30`. It does not replace the offline gate or touch the security audit jobs. Expo's
+remote requirements must still be reviewed before production. See docs/architecture/MOBILE_COMPATIBILITY.md. Two defects found in the diagnostic script (an unexpected exception exited 1 instead of 2; unsanitized CLI or server text could inject workflow-command lines into the log) were fixed and verified locally with 30 new tests and 10 negative controls. Local evidence: pnpm test 682 (node:test 114), integration 446, smoke 27,
+Android export 578 modules, Chrome E2E 16, `audit:diff` exit 0, and `pnpm audit --audit-level=high` still failing on exactly the two known
+advisories. F-04 and F-05 remain unresolved.
 
 Stage 2.8: the web app signs in, restores, and signs out through a same-origin proxy of three API routes. No CORS, no API change, no
 migration. Specification and risks: [docs/security/WEB_AUTHENTICATION.md](docs/security/WEB_AUTHENTICATION.md). Hosted evidence and the

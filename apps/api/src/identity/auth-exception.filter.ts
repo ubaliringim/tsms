@@ -15,6 +15,7 @@ import { requestIdOf } from './security-request-context.js';
 interface PlatformResponse {
   status(code: number): PlatformResponse;
   json(body: unknown): unknown;
+  setHeader(name: string, value: string): unknown;
 }
 
 /**
@@ -57,7 +58,13 @@ const PUBLIC_BODY: Record<AuthErrorCode, { statusCode: number; error: string }> 
 export class AuthExceptionFilter implements ExceptionFilter<AuthError> {
   catch(exception: AuthError, host: ArgumentsHost): void {
     const body = PUBLIC_BODY[exception.code] ?? PUBLIC_BODY.SERVICE_FAILURE;
-    host.switchToHttp().getResponse<PlatformResponse>().status(body.statusCode).json(body);
+    const response = host.switchToHttp().getResponse<PlatformResponse>();
+    // Stage 2.9. A refusal raised inside the handler (the global Argon2id budget or the per-account success
+    // budget) names its own bounded wait. A refusal from the guard has already set the header itself.
+    if (exception.retryAfterSeconds !== undefined) {
+      response.setHeader('Retry-After', String(exception.retryAfterSeconds));
+    }
+    response.status(body.statusCode).json(body);
   }
 }
 

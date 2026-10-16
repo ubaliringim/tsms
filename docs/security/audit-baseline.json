@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "description": "Exact set of dependency advisories that are owner-accepted and UNSUPPRESSED. scripts/audit-diff.mjs compares the live `pnpm audit --json` result with this file. It is read-only for that script: a changed or resolved finding is reported, never rewritten. Edit it by hand, only together with docs/security/DEPENDENCY_RISK_REGISTER.md and an owner decision.",
+  "advisories": [
+    {
+      "id": "GHSA-86w9-cpqp-85rv",
+      "package": "node-forge",
+      "severity": "high",
+      "versions": ["1.4.0"]
+    },
+    {
+      "id": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "severity": "high",
+      "versions": ["3.0.3"]
+    }
+  ]
+}

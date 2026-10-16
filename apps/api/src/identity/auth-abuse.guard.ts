@@ -32,6 +32,7 @@ import { AuthError, normalizeEmail } from './auth.service.js';
 import type { AbuseEndpoint } from './auth-abuse-policy.js';
 import { SecurityLog } from './security-log.js';
 import { requestIdOf } from './security-request-context.js';
+import { parseAuthBody, type AuthBodyKind } from './auth-request-shape.js';
 
 /** DI token for the abuse-protection service. */
 export const ABUSE_PROTECTION = Symbol('ABUSE_PROTECTION');
@@ -51,6 +52,12 @@ export interface AbuseDecisionRecord {
    * it to decide whether to fail closed; nothing else reads it.
    */
   readonly enforcementUnavailable: boolean;
+  /**
+   * True when this request took a credential reservation that a non-abuse outcome should return. The
+   * interceptor refunds only when this is true: a malformed request, or one the guard did not meter, took
+   * nothing, and refunding it would credit the caller with a token it never spent.
+   */
+  readonly reserved: boolean;
 }
 
 /** Symbol under which the decision is attached to the request. */
@@ -58,6 +65,7 @@ export const ABUSE_DECISION = Symbol('ABUSE_DECISION');
 
 interface GuardedRequest {
   readonly body?: unknown;
+  readonly headers?: Record<string, unknown>;
   readonly socket?: { readonly remoteAddress?: string | undefined };
   [ABUSE_DECISION]?: AbuseDecisionRecord;
 }
@@ -83,12 +91,38 @@ function bodyString(body: unknown, key: string): string | undefined {
  * charged. `normalizeEmail` is the accepted Stage 2.4 normalisation, so the account dimension keys on
  * exactly the string the database would look up.
  */
-export function abuseContextFor(request: GuardedRequest): AbuseRequestContext {
+export function abuseContextFor(
+  request: GuardedRequest,
+  endpoint: AbuseEndpoint,
+): AbuseRequestContext {
   return {
     clientAddress: clientAddressOf(request),
     normalizedEmail: normalizeEmail(bodyString(request.body, 'email')),
     recoveryToken: bodyString(request.body, 'token'),
+    wellFormed: isWellFormedRequest(endpoint, request),
   };
+}
+
+/** Which body shape each body-bearing endpoint expects. `me` and `logout` carry none. */
+const BODY_KINDS: Readonly<Partial<Record<AbuseEndpoint, AuthBodyKind>>> = {
+  login: 'login',
+  forgot: 'forgot',
+  reset: 'reset',
+};
+
+/**
+ * Whether the controller would accept this request's shape - Stage 2.9.
+ *
+ * Decided by the very function the controller uses (`parseAuthBody`), so the two cannot disagree. For login it
+ * also requires an address the account lookup could use, because the service rejects an unusable address as
+ * malformed before any verification. Reads structure only, never account state.
+ */
+export function isWellFormedRequest(endpoint: AbuseEndpoint, request: GuardedRequest): boolean {
+  const kind = BODY_KINDS[endpoint];
+  if (kind === undefined) return true;
+  const parsed = parseAuthBody(kind, request.headers?.['content-type'], request.body);
+  if (parsed === null) return false;
+  return kind !== 'login' || normalizeEmail(parsed['email']) !== null;
 }
 
 /** Enforce the endpoint's policy before the handler runs. */
@@ -117,7 +151,7 @@ export class AuthAbuseGuard implements CanActivate {
     const request = http.getRequest<GuardedRequest>();
     const response = http.getResponse<{ setHeader(name: string, value: string): void }>();
 
-    const decision = await this.protection.decide(endpoint, abuseContextFor(request));
+    const decision = await this.protection.decide(endpoint, abuseContextFor(request, endpoint));
 
     if (decision.kind === 'limited') {
       // Set here because the controller writes the body and the header has to be on the response
@@ -129,6 +163,7 @@ export class AuthAbuseGuard implements CanActivate {
       kind: decision.kind,
       endpoint,
       enforcementUnavailable: decision.kind === 'unavailable',
+      reserved: decision.reserved,
     });
     Object.defineProperty(request, ABUSE_DECISION, {
       value: record,

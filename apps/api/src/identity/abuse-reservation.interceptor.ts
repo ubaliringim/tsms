@@ -36,7 +36,12 @@ import { CallHandler, ExecutionContext, Inject, Injectable, NestInterceptor } fr
 import { Reflector } from '@nestjs/core';
 import { Observable, from } from 'rxjs';
 import { catchError, mergeMap } from 'rxjs/operators';
-import { ABUSE_ENDPOINT_METADATA, ABUSE_PROTECTION, abuseContextFor } from './auth-abuse.guard.js';
+import {
+  ABUSE_ENDPOINT_METADATA,
+  ABUSE_PROTECTION,
+  abuseContextFor,
+  abuseDecisionOf,
+} from './auth-abuse.guard.js';
 import { AbuseProtectionService } from './abuse-protection.service.js';
 import { AuthError } from './auth.service.js';
 import type { AbuseEndpoint } from './auth-abuse-policy.js';
@@ -75,7 +80,10 @@ export class AbuseReservationInterceptor implements NestInterceptor {
     if (endpoint === undefined) return next.handle();
 
     const request = context.switchToHttp().getRequest();
-    const contextOf = () => abuseContextFor(request);
+    const contextOf = () => abuseContextFor(request, endpoint);
+    // Stage 2.9. A request that took no reservation (a malformed one, which the guard routed to its own meter)
+    // has nothing to return. Refunding it anyway would credit the caller with tokens it never spent.
+    const reserved = abuseDecisionOf(request)?.reserved === true;
 
     /**
      * Return this request's reservation.
@@ -84,6 +92,7 @@ export class AbuseReservationInterceptor implements NestInterceptor {
      * surfacing it would turn an ordinary wrong password into a `503`.
      */
     const refund = async (): Promise<void> => {
+      if (!reserved) return;
       try {
         await this.protection.refundFor(endpoint, contextOf());
       } catch {
@@ -105,6 +114,13 @@ export class AbuseReservationInterceptor implements NestInterceptor {
 
     /** Decide the fate of a failed request, refund if it was not abuse, and always re-raise. */
     const settle = async (failure: unknown): Promise<never> => {
+      // Stage 2.9. A refusal raised inside the handler by the global Argon2id budget or the success budget
+      // carries a retry hint. The request took a reservation but attempted nothing, so it is returned.
+      if (failure instanceof AuthError && failure.retryAfterSeconds !== undefined) {
+        await refund();
+        throw failure;
+      }
+
       // A guard refusal wrote nothing, so there is no reservation to return. Touching the meter again
       // would let a caller drain a budget simply by asking past it.
       if (isGuardRefusal(failure)) throw failure;

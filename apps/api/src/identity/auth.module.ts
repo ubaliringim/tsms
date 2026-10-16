@@ -108,30 +108,40 @@ export class AuthModule implements NestModule {
            * than per process - a process-local counter would let each replica allow its own share and the
            * fleet total would scale with the number of replicas. Deliberately not optional: both services
            * require it, because every verification on those paths allocates 64 MiB.
+           *
+           * Stage 2.9. It also carries the global Argon2id *rate* budget, charged here - where an operation is
+           * actually admitted - rather than at request admission.
            */
           provide: Argon2idAdmissionService,
-          useFactory: (redis: RedisService) =>
-            new Argon2idAdmissionService(redis.redis, ARGON2ID_CONCURRENCY),
-          inject: [RedisService],
+          useFactory: (redis: RedisService, abuse: AbuseProtectionService) =>
+            new Argon2idAdmissionService(
+              redis.redis,
+              { charge: () => abuse.chargeGlobalWorkload() },
+              ARGON2ID_CONCURRENCY,
+            ),
+          inject: [RedisService, ABUSE_PROTECTION],
         },
         {
           provide: AuthService,
           useFactory: (
             database: DatabaseService,
-            credentials: PasswordCredentialService,
             sessions: SessionService,
             argon2id: Argon2idAdmissionService,
             events: SecurityEventRecorder,
             securityLog: SecurityLog,
+            abuse: AbuseProtectionService,
           ) =>
-            new AuthService(database.prisma, credentials, sessions, argon2id, events, securityLog),
+            new AuthService(database.prisma, sessions, argon2id, events, securityLog, {
+              charge: (email) => abuse.chargeLoginSuccess(email),
+              refund: (email) => abuse.refundLoginSuccess(email),
+            }),
           inject: [
             DatabaseService,
-            PasswordCredentialService,
             SessionService,
             Argon2idAdmissionService,
             SecurityEventRecorder,
             SECURITY_LOG,
+            ABUSE_PROTECTION,
           ],
         },
         {

@@ -1,9 +1,90 @@
-# Current task: none active - Stage 2.8 Minimal Web Authentication Integration is ACCEPTED / HOSTED VERIFIED / CLOSED
+# Current task: Stage 2.9 - Controlled security remediation (REMEDIATION IMPLEMENTED / LOCALLY VALIDATED EXCEPT ONE EXTERNAL FAILURE / UNDER OWNER REVIEW)
 
 Owner: TeamStack Technologies LTD
 
 Stages 2.1 through 2.8: ACCEPTED / HOSTED VERIFIED / CLOSED. Stage 2 overall: NOT ACCEPTED.
-**Stage 2.9: NOT STARTED / UNAUTHORIZED.** Production deployment: NOT AUTHORIZED. No new task is active in this file.
+**Stage 2.9: REMEDIATION IMPLEMENTED / LOCALLY VALIDATED EXCEPT ONE EXTERNAL FAILURE / UNDER OWNER REVIEW.** Not committed, not pushed, not hosted-verified, not accepted, not closed.
+Stage 2.10: NOT STARTED / UNAUTHORIZED. Production deployment: NOT AUTHORIZED.
+
+**Status (2026-10-16): Stage 2.9 is IN PROGRESS and awaits owner review and approval.** Expo 57.0.28 is installed. The CI compatibility gate is
+now offline and passes; a separate informational live diagnostic currently reports the installed Expo patch BELOW Expo's advertised minimum
+(`~57.0.30`). The online `pnpm mobile:check` therefore still fails locally. Nothing is committed, pushed, hosted-verified, accepted or closed.
+
+## Stage 2.9 remediation (baseline `64ff6c49e7006c95de1cb609257758c5ae588cc9`, uncommitted)
+
+The owner authorized implementing and locally validating corrections for F-01, F-02, F-03, F-06, F-07, F-08 and F-09, even where they
+revise accepted Stage 2.4 or 2.6 behaviour. Each defect was first reproduced on a dedicated Redis database and the guarded test database.
+
+**What was implemented**
+
+- **F-01.** Global Argon2id budget is charged at the Argon2id admission choke point, not at request admission. Malformed requests have their own bounded per-source meter (30 per 5 min), reserve nothing, and are never refunded.
+- **F-02.** Provisional per-account success meter: 10 successful logins per 10 minutes. Charged after the password verifies and before any session exists; returned if session creation fails; failed attempts never consume it.
+- **F-03.** Exactly one Argon2id verification on every login path (real digest or decoy), asserted by deterministic call counts. The earlier doc claim of indistinguishable cost was inaccurate and is corrected.
+- **F-06.** Production fails closed: explicit NODE_ENV (no default), https non-loopback origins, no repository example secrets or development credentials, explicit API_HOST, PostgreSQL sslmode=verify-full, rediss: Redis, no NODE_TLS_REJECT_UNAUTHORIZED=0. Checked against the installed pg and ioredis behaviour.
+- **F-07.** scripts/audit-diff.mjs plus docs/security/audit-baseline.json and a separate security-audit-diff CI job. The existing security-audit job is unchanged and unsuppressed.
+- **F-08.** A password-policy rejection answers 400 before any slot or budget; any other hashing failure answers 503. Token and credential are untouched in both cases.
+- **F-09.** Recovery issuance takes the existing per-user advisory lock, so concurrent requests leave exactly one live token.
+
+**Deliberately not done**
+
+- F-04 per-account lockout and F-05 shared source-IP attribution behind the web proxy were NOT changed, as instructed.
+- No session cap, session cleanup, idle timeout, new recovery provider, or unrelated hardening was added.
+
+**Final inspection (second review of the corrections)**
+
+- F-01 gap found and fixed: a well-formed login whose password fails the policy took an Argon2id slot and spent a global-budget token although the verifier returns before Argon2id runs. It now takes neither.
+- Concurrency: with three global tokens, six simultaneous logins give exactly three successes and three 429s with Retry-After; sessions and events number three; every reservation and every semaphore slot is returned.
+- A malformed request cannot obtain a refund: two independent layers prevent it (interceptor flag and the refundable-dimension function).
+- Success meter: no credential oracle (correct and wrong password get the identical 429 in about 5 ms); refunds cannot over-credit; 16 simultaneous charges give exactly 10. One residual signal is documented and pinned by a test: an account at its own limit refuses fast where an unknown address does not. It is not usable against an arbitrary account.
+- Locks: login, reset and issuance each take the same advisory lock first, so no lock-order inversion exists. A mixed concurrent round completes without deadlock and ends consistent. A reset superseded while hashing is refused deterministically. Coupling recorded: issuance can wait on a long reset of the same user and answer the fixed 503 after Prisma's 5 s limit.
+- F-06: real TLS handshakes through the installed pg and ioredis confirm verify-full and rediss: verify the certificate and hostname, and that every setting the validator forbids connects to an untrusted certificate or uses no TLS. Test mode is now restricted to loopback PostgreSQL and Redis, and the Redis integration-test guard now requires a loopback host like the database guard.
+- F-07: the checker was tested against a trimmed real pnpm audit JSON fixture; the workflow test pins that security-audit is the original single step with nothing that could change its exit status, and that the diff job has no pipe, redirect or fallback.
+
+**Validation (actual outcomes)**
+
+- pnpm install --frozen-lockfile, db:generate, format:check, lint, typecheck, build, git diff --check: pass
+- pnpm check: pass (a first run failed at lint on three errors in a new test, which were fixed and the run repeated)
+- pnpm test: pass, 682 tests: redis 12, database 17, config 118, api 308, worker 4, web 109, node:test 114 (1 toolchain + 55 audit-diff + 58 expo-live-check in two files). Before the Expo CI change this was 624 (node:test 56).
+- pnpm test:integration: pass, 446 tests: redis 66, database 35, api 320, web 25
+- pnpm smoke: pass, 27 assertions
+- pnpm mobile:export: pass, 578 modules
+- pnpm test:e2e: pass, 16 tests in installed Google Chrome
+- pnpm audit --audit-level=high: FAILS as expected, 2 findings, exactly GHSA-86w9-cpqp-85rv and GHSA-vfj7-8cjw-p6xm, unsuppressed
+- pnpm audit:diff: exit 0, the findings are exactly the documented baseline (this does not make the audit clean)
+- pnpm mobile:check (online, unchanged): FAILS, exit 1, EXTERNAL. Installed expo is 57.0.28; Expo's server now advertises `expo ~57.0.30` (57.0.28 was published 2026-10-12, 57.0.29 on 2026-10-14, 57.0.30 on 2026-10-15 14:38 UTC). 57.0.30 needs newer `@expo/cli` 57.0.31 and `babel-preset-expo` 57.0.16, both published 2026-10-15 about 14:40 UTC, so the full set is not eligible under the 24-hour policy until about 2026-10-16 14:41 UTC. No Expo update to 57.0.29 or 57.0.30 was made.
+- EXPO_OFFLINE=1 pnpm mobile:check (the new CI gate): pass, exit 0, "Dependencies are up to date" (prints the CLI's offline-mode reliability warning)
+- pnpm mobile:check:live (new diagnostic): exit 1, INCOMPATIBLE: installed 57.0.28 is below Expo's advertised `~57.0.30`
+- Interrupted-session recovery (2026-10-15): PostgreSQL and Redis were down after the restart; `tsms-postgres` and `tsms-redis` were restarted with data volumes intact. `teamstack-redis` (another project) held port 6379 and was stopped. The previously failing F-02 integration file (39 tests) and the rate-limit files (32, 6 and 30) passed individually and the full integration suite passed (446); the earlier failures did not reproduce and their cause is unproven.
+- Re-run after recovery: pnpm test:integration 446 (exit 0), pnpm smoke 27 assertions, pnpm mobile:export 578 modules, E2E_BROWSER_CHANNEL=chrome pnpm test:e2e 16 passed, pnpm audit:diff exit 0, pnpm audit --audit-level=high exit 1 on exactly the two known advisories. These were not re-run after the Expo CI change, which touches only the workflow, one script, one test file and documentation.
+- Negative controls: 17 mutations of build output, the audit script and the workflow (byte-exact restore), each made the guarding tests fail
+
+**Expo dependency state and CI compatibility gate (2026-10-15/16)**
+
+- Working tree (uncommitted): `apps/student-mobile/package.json` pins `expo` 57.0.28; `pnpm-lock.yaml` carries nine matching bumps (`@expo/cli` 57.0.29, `@expo/fingerprint` 0.20.14, `@expo/inline-modules` 0.1.8, `@expo/local-build-cache-provider` 57.0.9, `@expo/prebuild-config` 57.0.18, `babel-preset-expo` 57.0.15, `expo-modules-autolinking` 57.0.15, `expo-modules-core` 57.0.22, `expo-modules-jsi` 57.1.2). `pnpm-workspace.yaml` is unmodified: no `minimumReleaseAgeExclude` entry was added and `minimumReleaseAgeStrict: true` is intact. An earlier note here said the bumps needed ten exclusions and had not been made; that was true only before the 24-hour window passed and is superseded.
+- Why the gate changed: `expo install --check` takes the minimum `expo` patch from Expo's server, which overrides the bundled metadata of the installed `expo`. That floor moved four times in nine days, so a gate that follows it turns red for reasons outside this repository and cannot be fixed until the 24-hour window passes.
+- `.github/workflows/ci.yml`: the `validate` job runs `EXPO_OFFLINE=1 pnpm mobile:check` exactly once. The offline run validates against the installed SDK's bundled metadata (today only `react` and `react-native`). It does NOT validate Expo's advertised minimum `expo` patch, server-pushed corrections, packages outside the bundled map, or anything native.
+- New job `expo-live-diagnostic` runs `pnpm mobile:check:live` (`scripts/expo-live-check.mjs`): informational, `continue-on-error: true` on that job only, emits a `::warning` annotation and a job summary. It reports COMPATIBLE (exit 0), INCOMPATIBLE (exit 1) or INDETERMINATE (exit 2). It does not replace the offline gate and does not touch `security-audit` or `security-audit-diff`, which are unchanged.
+- `pnpm mobile:check` is unchanged for developers. Expo's remote requirements must still be reviewed before production deployment. Specification: [docs/architecture/MOBILE_COMPATIBILITY.md](../docs/architecture/MOBILE_COMPATIBILITY.md).
+- Files for this change: `.github/workflows/ci.yml`, `package.json` (scripts `mobile:check:live` and the test list), `scripts/expo-live-check.mjs` (new), `tests/expo-live-check.test.mjs` and `tests/expo-live-check-safety.test.mjs` (new, 28 and 30 tests), `docs/architecture/MOBILE_COMPATIBILITY.md` (new), `README.md`, `docs/security/PRODUCTION_CONFIGURATION.md`.
+- Diagnostic script defects D1 and D2 (found in the pre-commit review) were FIXED with owner authorization and are verified locally. D1: any unexpected exception (including a module or command that cannot be resolved) is INDETERMINATE with exit 2, a warning and a summary, never a confirmed INCOMPATIBLE. D2: all external text (server responses, CLI stdout and stderr, dependency names and ranges, exception messages) is neutralized at the output boundary for the plain log, the workflow annotation and the Markdown summary. 30 new tests, and 10 negative controls on the implementation (neutralization removed or weakened, exceptions rethrown or exiting 1, annotation encoding removed, summary fence shortened, report lines or CLI excerpts left raw, the contradiction rule removed) each made tests fail, and the file was restored byte-for-byte. Not verified: a run on GitHub itself.
+- Not verified: the new workflow has not run on GitHub; a real network failure was exercised only through unit tests with a stubbed fetch.
+
+**Remaining unresolved findings**
+
+- F-04 targeted account lockout through the per-account failure meter (documented, understated, unchanged).
+- F-05 shared source-IP bucket behind the same-origin web proxy. A deployment blocker; Stage 2.6 attribution and thresholds unchanged.
+- Unknown ingress and TLS topology, partial CSP, local-only Chrome browser tests, no recovery email provider, no idle session expiry.
+- Forgot still answers `503` for an ineligible address when the Argon2id semaphore is saturated or unavailable while an eligible address
+  answers `202` (pre-existing; the new budget refusal is deliberately swallowed there, but saturation is not).
+- Both dependency advisories remain open and unsuppressed.
+
+**Exact next action:** owner review of the Stage 2.9 remediation and of the Expo CI change below, a decision on when to move Expo to 57.0.30
+(after about 2026-10-16 14:41 UTC, with no release-age exclusions), and explicit authorization before any commit or push.
+**DO NOT** commit, push, deploy, close Stage 2.9, or begin Stage 2.10.
+
+---
+
+## Stage 2.8 status (closed, retained as history)
 
 **Stage 2.8 is closed (owner decision, 2026-10-12)** for the accepted development scope. The hosted run was read and is recorded below.
 Closure is not production readiness.

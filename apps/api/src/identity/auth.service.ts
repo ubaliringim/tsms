@@ -1,12 +1,13 @@
 import type { PrismaClient } from '@tsms/database';
-import { PasswordCredentialService, fingerprintOf } from './password-credential.service.js';
-import { PasswordCredentialError } from './password-error.js';
-import { verifyPassword } from './password-hasher.js';
+import { fingerprintOf } from './password-credential.service.js';
+import { verifyPassword, type PasswordVerification } from './password-hasher.js';
+import { validatePassword } from './password-policy.js';
 import {
   Argon2idAdmissionService,
   Argon2idAdmissionRefused,
   withArgon2idSlot,
 } from './argon2id-admission.service.js';
+import type { MeterOutcome } from './meter-outcome.js';
 import { SessionService } from './session.service.js';
 import { SessionError } from './session-error.js';
 import { lockUserSessionMutations } from './user-session-lock.js';
@@ -38,11 +39,39 @@ export type AuthErrorCode =
  * service never has to know about statuses, and the filter never has to know about credentials.
  */
 export class AuthError extends Error {
-  constructor(readonly code: AuthErrorCode) {
+  /**
+   * `retryAfterSeconds` is set only for a refusal raised **after** admission - the global Argon2id budget or the
+   * per-account success meter declining inside the handler. It lets the exception filter send `Retry-After`, and
+   * lets the reservation interceptor return the reservation, because nothing was attempted.
+   */
+  constructor(
+    readonly code: AuthErrorCode,
+    readonly retryAfterSeconds?: number,
+  ) {
     super(code);
     this.name = 'AuthError';
   }
 }
+
+export type { MeterOutcome };
+
+/**
+ * Per-account budget for successful logins - Stage 2.9.
+ *
+ * Charged only after the password has verified and before a session exists, so a refused success creates no
+ * session and no `LOGIN_SUCCEEDED` event. It is returned if session creation then fails, so only a login that
+ * actually produced a session spends it. Failed attempts never touch it.
+ */
+export interface LoginSuccessMeter {
+  charge(normalizedEmail: string): Promise<MeterOutcome>;
+  refund(normalizedEmail: string): Promise<void>;
+}
+
+/** The one Argon2id verification a login performs. A parameter so a test can count calls deterministically. */
+export type PasswordVerifier = (
+  candidate: unknown,
+  encoded: string,
+) => Promise<PasswordVerification>;
 
 /**
  * A fixed Argon2id digest with the production parameters (64 MiB, t=3, p=1), generated from a
@@ -103,7 +132,6 @@ export interface LoginResult {
 export class AuthService {
   constructor(
     private readonly database: PrismaClient,
-    private readonly credentials: PasswordCredentialService,
     private readonly sessions: SessionService,
     /**
      * Deployment-wide Argon2id admission - Stage 2.6 hardening.
@@ -120,7 +148,13 @@ export class AuthService {
      */
     private readonly events: SecurityEventRecorder,
     private readonly securityLog: SecurityLog,
+    /**
+     * Stage 2.9. Required, like the services above: a login without the success meter would silently be
+     * unbounded again.
+     */
+    private readonly successMeter: LoginSuccessMeter,
     private readonly clock: () => Date = () => new Date(),
+    private readonly verify: PasswordVerifier = verifyPassword,
   ) {}
 
   /**
@@ -156,18 +190,33 @@ export class AuthService {
       throw new AuthError('INVALID_REQUEST');
     }
 
-    // One slot covers the whole verification, including the decoy path. Holding it across both would
-    // needlessly serialise a request that only ever does one of them.
+    // One slot covers the whole verification, including the decoy path.
+    //
+    // Stage 2.9 inspection. A candidate that fails the password policy is rejected by the verifier before Argon2id
+    // runs, on the real-digest path and the decoy path alike. It therefore needs no slot and must not spend the
+    // global Argon2id budget, which measures hashing actually started. Charging it would let a flood of well-formed
+    // logins with a short password drain the budget without ever hashing. Everything else about the attempt -
+    // the lookup, the failure record, the generic refusal - is identical, so nothing distinguishes the cases.
+    const hashes = validatePassword(password).valid;
+    const attempt = () => this.verifyAndCreateSession(normalizedEmail, password, requestId);
     try {
-      return await withArgon2idSlot(this.argon2id, () =>
-        this.verifyAndCreateSession(normalizedEmail, password, requestId),
-      );
+      return hashes ? await withArgon2idSlot(this.argon2id, attempt) : await attempt();
     } catch (error) {
       // Stage 2.6 hardening. The deployment is at its simultaneous-verification bound, or the bound
       // could not be confirmed. Either way no Argon2id is attempted and no session is created. The
       // caller maps this to the same sanitized `503` as any other service failure, so it is
       // indistinguishable from an infrastructure problem - which is what it is.
       if (error instanceof Argon2idAdmissionRefused) {
+        if (error.refusal === 'budget') {
+          // Stage 2.9. The deployment-wide Argon2id budget declined at the moment the work would have started.
+          // No Argon2id ran and nothing was written. It is the same `429` the guard answers with.
+          this.securityLog.record('auth_rate_limited', {
+            endpoint: 'login',
+            requestId,
+            reason: 'rate_limited',
+          });
+          throw new AuthError('RATE_LIMITED', error.retryAfterSeconds);
+        }
         this.securityLog.record('argon2id_admission_refused', {
           endpoint: 'login',
           requestId,
@@ -179,7 +228,24 @@ export class AuthService {
     }
   }
 
-  /** The accepted Stage 2.4 and Stage 2.5 verification, now bracketed by one Argon2id slot. */
+  /**
+   * The accepted Stage 2.4 and Stage 2.5 verification, bracketed by one Argon2id slot.
+   *
+   * Stage 2.9. Every path performs exactly one Argon2id verification, so the cost of a refusal does not depend on
+   * whether the address belongs to an account:
+   *
+   * - one read returns the user and, when there is one, its credential;
+   * - one verification then runs against the real digest when the account is active and has a credential, and
+   *   against the fixed decoy digest otherwise;
+   * - the result is only believed when it was a verification against the real digest.
+   *
+   * The earlier version verified against the real digest and, on a mismatch, verified again against the decoy,
+   * so an existing account with a wrong password cost twice what an unknown address cost. That doubling is
+   * what the account-existence timing oracle was made of.
+   *
+   * The credential version and digest fingerprint come from the same read as the digest that was verified, so the
+   * in-lock revalidation below still compares against exactly what the password was checked against.
+   */
   private async verifyAndCreateSession(
     normalizedEmail: string,
     password: string,
@@ -187,38 +253,63 @@ export class AuthService {
   ): Promise<LoginResult> {
     const user = await this.database.user.findUnique({
       where: { normalizedEmail },
-      select: { ...profileFields, status: true },
+      select: {
+        ...profileFields,
+        status: true,
+        passwordCredential: { select: { passwordHash: true, passwordChangedAt: true } },
+      },
     });
 
-    let verified: { matches: boolean; version: number; fingerprint: string } | null = null;
-    if (user !== null && user.status === 'ACTIVE') {
-      try {
-        const outcome = await this.credentials.verifyCredentialVersioned(user.id, password);
-        if (outcome.verification.matches) {
-          verified = {
-            matches: true,
-            version: outcome.version,
-            fingerprint: outcome.fingerprint,
-          };
-        }
-      } catch (error) {
-        // A missing credential is an authentication outcome. Anything else - a storage or
-        // driver failure - is operational and must stay distinguishable from "wrong password".
-        if (!(error instanceof PasswordCredentialError) || error.code !== 'CREDENTIAL_NOT_FOUND') {
-          throw new AuthError('SERVICE_FAILURE');
-        }
-      }
+    const credential = user !== null && user.status === 'ACTIVE' ? user.passwordCredential : null;
+
+    let outcome: PasswordVerification;
+    try {
+      outcome = await this.verify(password, credential?.passwordHash ?? DECOY_PASSWORD_HASH);
+    } catch {
+      // A storage or native failure is operational, and is the same on the decoy path as on the real one, so it
+      // cannot separate an existing account from an unknown address either.
+      throw new AuthError('SERVICE_FAILURE');
     }
 
-    if (verified === null || user === null) {
-      // Unknown address, disabled account, or no credential record. Pay the real verification
-      // cost anyway so duration does not become an account-existence oracle.
-      await this.burnVerification(password);
+    if (user === null || credential === null || !outcome.matches) {
+      // Unknown address, disabled account, no credential record, or a wrong password. The one verification above
+      // already paid the real cost.
       await this.recordLoginFailure(user?.id ?? null, requestId);
       throw new AuthError('AUTHENTICATION_FAILED');
     }
 
-    return this.createSessionUnderLock(user, verified, requestId);
+    const verified = {
+      version: credential.passwordChangedAt.getTime(),
+      fingerprint: fingerprintOf(credential.passwordHash),
+    };
+
+    // Stage 2.9. The per-account success budget is consumed here: after the password is known to be correct and
+    // before any session exists. A refusal therefore creates no session and no `LOGIN_SUCCEEDED` event.
+    const charge = await this.successMeter.charge(normalizedEmail);
+    if (charge.kind === 'limited') {
+      this.securityLog.record('auth_rate_limited', {
+        endpoint: 'login',
+        requestId,
+        reason: 'rate_limited',
+      });
+      throw new AuthError('RATE_LIMITED', charge.retryAfterSeconds);
+    }
+    if (charge.kind === 'unavailable') {
+      this.securityLog.record('auth_enforcement_unavailable', {
+        endpoint: 'login',
+        requestId,
+        reason: 'redis_unavailable',
+      });
+      throw new AuthError('SERVICE_FAILURE');
+    }
+
+    try {
+      return await this.createSessionUnderLock(user, verified, requestId);
+    } catch (error) {
+      // No session was issued, so the success budget is returned: only a login that produced a session spends it.
+      await this.successMeter.refund(normalizedEmail);
+      throw error;
+    }
   }
 
   /**
@@ -406,20 +497,6 @@ export class AuthService {
       // INVALID_TOKEN, SESSION_NOT_FOUND, SESSION_EXPIRED, SESSION_REVOKED, USER_NOT_FOUND and
       // USER_DISABLED are all the same externally visible outcome.
       throw new AuthError('AUTHENTICATION_FAILED');
-    }
-  }
-
-  /**
-   * Spend a real Argon2id verification against the decoy digest.
-   *
-   * Failures are ignored: the caller is already rejecting the login, and this path exists only to
-   * equalise cost.
-   */
-  private async burnVerification(candidate: unknown): Promise<void> {
-    try {
-      await verifyPassword(candidate, DECOY_PASSWORD_HASH);
-    } catch {
-      // Nothing to disclose and nothing to do.
     }
   }
 }

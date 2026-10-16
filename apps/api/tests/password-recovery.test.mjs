@@ -132,6 +132,8 @@ describe('recovery delivery gating', () => {
 
 describe('password recovery configuration', () => {
   const base = {
+    // Stage 2.9: NODE_ENV has no default, so every fixture states it.
+    NODE_ENV: 'test',
     DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/tsms',
     REDIS_URL: 'redis://:p@127.0.0.1:6379',
     API_TRUSTED_ORIGINS: 'https://app.example.com',
@@ -140,7 +142,7 @@ describe('password recovery configuration', () => {
 
   it('defaults delivery to disabled so recovery fails closed', () => {
     expect(
-      parseApiEnvironment({ ...base, NODE_ENV: 'production' }).API_PASSWORD_RECOVERY_DELIVERY_MODE,
+      parseApiEnvironment({ ...base, NODE_ENV: 'development' }).API_PASSWORD_RECOVERY_DELIVERY_MODE,
     ).toBe('disabled');
     expect(parseApiEnvironment({ ...base }).API_PASSWORD_RECOVERY_URL_BASE).toBeUndefined();
   });

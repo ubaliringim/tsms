@@ -1,7 +1,20 @@
 import { z } from 'zod';
 
-const mode = z.enum(['development', 'test', 'production']).default('development');
+/**
+ * Deployment mode. Required: there is deliberately no default.
+ *
+ * The session cookie's `Secure` flag and `__Host-` name, and every production rule below, are derived from this
+ * value. A default of `development` meant a deployment that simply forgot to set it silently issued a plain,
+ * non-`Secure` cookie. Refusing to start without it turns that omission into a visible failure.
+ */
+const mode = z.enum(['development', 'test', 'production']);
 const host = z.string().trim().min(1).default('127.0.0.1');
+/**
+ * Bind host that may be omitted outside production (it then defaults to loopback). Production requires it to be
+ * stated, so the decision to listen on a non-loopback interface is always an explicit one.
+ */
+const optionalHost = z.string().trim().min(1).optional();
+const DEFAULT_API_HOST = '127.0.0.1';
 const port = (fallback: string) =>
   z
     .string()
@@ -195,13 +208,171 @@ const rateLimitHmacSecret = z
     message: 'must not be a single repeated character or a short repeating pattern',
   });
 
+/**
+ * Production requirements - Stage 2.9.
+ *
+ * Every rule below applies only when `NODE_ENV=production`, and none is configurable: a production deployment
+ * either meets them or does not start. Messages are fixed strings and the parser reports only the names of the
+ * failing keys, so a rejected value - a password, a secret, a hostname - is never echoed.
+ *
+ * The transport rules are written against the behaviour of the client libraries actually installed, not against a
+ * general idea of TLS, and `packages/config/tests/transport-semantics.test.mjs` cross-checks each accepted URL
+ * against what `pg-connection-string` and `ioredis` really configure:
+ *
+ *  - PostgreSQL (`pg` through `@prisma/adapter-pg`): TLS is verified, hostname included, for `sslmode=verify-full`.
+ *    `no-verify` disables verification, `disable` and an absent `sslmode` fall back to plaintext or to the
+ *    `PGSSLMODE` environment variable, and `uselibpqcompat=true` quietly weakens `require`, `prefer` and `verify-ca`
+ *    to unverified connections. So `verify-full` is required and `uselibpqcompat` is refused.
+ *  - Redis (`ioredis`): a `rediss:` URL enables TLS with Node's default certificate and hostname verification, because
+ *    the client passes no `tls` options of its own. URL query parameters are copied into the client options, so none
+ *    is accepted.
+ *  - `NODE_TLS_REJECT_UNAUTHORIZED=0` switches certificate verification off process-wide, so it is refused.
+ */
+const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set([
+  'localhost',
+  '127.0.0.1',
+  '[::1]',
+  '0.0.0.0',
+  '[::]',
+]);
+
+function isLoopbackHost(hostname: string): boolean {
+  const lowered = hostname.toLowerCase();
+  return (
+    LOOPBACK_HOSTNAMES.has(lowered) || lowered.startsWith('127.') || lowered.endsWith('.localhost')
+  );
+}
+
+/** Secrets committed to this repository. Public by construction, so never valid in production. */
+const KNOWN_REPOSITORY_SECRETS: ReadonlySet<string> = new Set([
+  'tsms_local_development_rate_limit_key_replace_in_production',
+]);
+/** Fragments that mark a value as copied from an example or a development fixture. */
+const REPOSITORY_SECRET_MARKERS =
+  /(local_development|replace_in_production|tsms_local|changeme|example)/i;
+
+/** Credentials committed in `infrastructure/docker-compose.yml` and `.env.example`. */
+const KNOWN_DEVELOPMENT_PASSWORDS: ReadonlySet<string> = new Set([
+  'tsms_local_development',
+  'tsms_local_redis',
+]);
+
+const POSTGRES_SSL_PARAMETERS: ReadonlySet<string> = new Set([
+  'sslmode',
+  'sslrootcert',
+  'sslcert',
+  'sslkey',
+]);
+
+function usablePassword(url: URL): boolean {
+  let password: string;
+  try {
+    password = decodeURIComponent(url.password);
+  } catch {
+    return false;
+  }
+  return password !== '' && !KNOWN_DEVELOPMENT_PASSWORDS.has(password);
+}
+
+/** True when a production `DATABASE_URL` does not guarantee a verified TLS connection. */
+function databaseUrlUnsafeForProduction(value: string): boolean {
+  const parsed = parseUrl(value);
+  if (parsed === null || !usablePassword(parsed)) return true;
+  const modes = parsed.searchParams.getAll('sslmode');
+  if (modes.length !== 1 || modes[0] !== 'verify-full') return true;
+  for (const key of parsed.searchParams.keys()) {
+    const lowered = key.toLowerCase();
+    // A differently-cased spelling is ignored by the driver, which would leave the intended setting unapplied.
+    if (lowered !== key && (lowered.startsWith('ssl') || lowered === 'uselibpqcompat')) return true;
+    if (lowered === 'uselibpqcompat') return true;
+    if (lowered.startsWith('ssl') && !POSTGRES_SSL_PARAMETERS.has(lowered)) return true;
+  }
+  return false;
+}
+
+/** True when a production `REDIS_URL` does not guarantee a verified TLS connection. */
+function redisUrlUnsafeForProduction(value: string): boolean {
+  const parsed = parseUrl(value);
+  return (
+    parsed === null ||
+    parsed.protocol !== 'rediss:' ||
+    parsed.search !== '' ||
+    !usablePassword(parsed)
+  );
+}
+
+interface ProductionInfrastructureInput {
+  readonly NODE_ENV: 'development' | 'test' | 'production';
+  readonly DATABASE_URL: string;
+  readonly REDIS_URL: string;
+  readonly NODE_TLS_REJECT_UNAUTHORIZED?: string | undefined;
+}
+
+/**
+ * Test mode never talks to a remote service - Stage 2.9.
+ *
+ * `NODE_ENV=test` selects the plain, non-`Secure` development cookie and, in the integration and browser suites,
+ * deletes rows and keys. A production deployment started with `NODE_ENV=test` by mistake, or a test run pointed at
+ * a real service, would be exactly the confusion this prevents: test mode is accepted only against loopback
+ * PostgreSQL and Redis. Development mode keeps its freedom, because a developer may legitimately use a shared
+ * remote service; production has its own, stricter rules above.
+ */
+function checkTestInfrastructure(
+  value: ProductionInfrastructureInput,
+  context: z.RefinementCtx,
+): void {
+  if (value.NODE_ENV !== 'test') return;
+  for (const key of ['DATABASE_URL', 'REDIS_URL'] as const) {
+    const parsed = parseUrl(value[key]);
+    if (parsed === null || !isLoopbackHost(parsed.hostname)) {
+      context.addIssue({
+        code: 'custom',
+        path: [key],
+        message: 'must point at a loopback host when NODE_ENV is test',
+      });
+    }
+  }
+}
+
+function checkProductionInfrastructure(
+  value: ProductionInfrastructureInput,
+  context: z.RefinementCtx,
+): void {
+  checkTestInfrastructure(value, context);
+  if (value.NODE_ENV !== 'production') return;
+  if (databaseUrlUnsafeForProduction(value.DATABASE_URL)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['DATABASE_URL'],
+      message:
+        'must use sslmode=verify-full, a non-empty non-development password, and no libpq-compat or conflicting ssl parameters in production',
+    });
+  }
+  if (redisUrlUnsafeForProduction(value.REDIS_URL)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['REDIS_URL'],
+      message:
+        'must be a rediss: URL with no query string and a non-empty non-development password in production',
+    });
+  }
+  if (value.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
+    context.addIssue({
+      code: 'custom',
+      path: ['NODE_TLS_REJECT_UNAUTHORIZED'],
+      message: 'must not disable certificate verification in production',
+    });
+  }
+}
+
 const apiSchema = z
   .object({
     NODE_ENV: mode,
-    API_HOST: host,
+    API_HOST: optionalHost,
     API_PORT: port('4000'),
     DATABASE_URL: databaseUrl,
     REDIS_URL: redisUrl,
+    NODE_TLS_REJECT_UNAUTHORIZED: z.string().optional(),
     API_TRUSTED_ORIGINS: apiTrustedOrigins,
     API_PASSWORD_RECOVERY_URL_BASE: passwordRecoveryUrlBase.optional(),
     API_PASSWORD_RECOVERY_DELIVERY_MODE: passwordRecoveryDeliveryMode.default('disabled'),
@@ -230,14 +401,48 @@ const apiSchema = z
         message: 'may not be development-only in production',
       });
     }
-  });
-const workerSchema = z.object({
-  NODE_ENV: mode,
-  WORKER_HOST: host,
-  WORKER_HEALTH_PORT: port('4001'),
-  DATABASE_URL: databaseUrl,
-  REDIS_URL: redisUrl,
-});
+    // Test mode is held to loopback services; production to the stricter rules below (Stage 2.9).
+    checkTestInfrastructure(value, context);
+    if (value.NODE_ENV !== 'production') return;
+    if (value.API_HOST === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['API_HOST'],
+        message: 'must be set explicitly in production',
+      });
+    }
+    for (const origin of value.API_TRUSTED_ORIGINS) {
+      const parsed = parseUrl(origin);
+      if (parsed === null || parsed.protocol !== 'https:' || isLoopbackHost(parsed.hostname)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['API_TRUSTED_ORIGINS'],
+          message: 'must list only non-loopback https origins in production',
+        });
+        break;
+      }
+    }
+    const secret = value.API_RATE_LIMIT_HMAC_SECRET;
+    if (KNOWN_REPOSITORY_SECRETS.has(secret) || REPOSITORY_SECRET_MARKERS.test(secret)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['API_RATE_LIMIT_HMAC_SECRET'],
+        message: 'must not be a value committed to the repository or copied from an example',
+      });
+    }
+    checkProductionInfrastructure(value, context);
+  })
+  .transform((value) => ({ ...value, API_HOST: value.API_HOST ?? DEFAULT_API_HOST }));
+const workerSchema = z
+  .object({
+    NODE_ENV: mode,
+    WORKER_HOST: host,
+    WORKER_HEALTH_PORT: port('4001'),
+    DATABASE_URL: databaseUrl,
+    REDIS_URL: redisUrl,
+    NODE_TLS_REJECT_UNAUTHORIZED: z.string().optional(),
+  })
+  .superRefine((value, context) => checkProductionInfrastructure(value, context));
 
 /**
  * Integration tests run against a separate disposable database and a separate

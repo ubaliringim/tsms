@@ -3,6 +3,8 @@ import { AuthError } from './auth.service.js';
 import { normalizeEmail } from './auth.service.js';
 import { verifyPassword } from './password-hasher.js';
 import { hashPassword } from './password-hasher.js';
+import { validatePassword } from './password-policy.js';
+import { PasswordCredentialError } from './password-error.js';
 import {
   buildRecoveryUrl,
   generateRecoveryToken,
@@ -78,6 +80,8 @@ export class PasswordRecoveryService {
     private readonly events: SecurityEventRecorder,
     private readonly securityLog: SecurityLog,
     private readonly clock: () => Date = () => new Date(),
+    /** The one Argon2id hash a reset performs. A parameter so a test can inject a failing or counting hasher. */
+    private readonly hash: (candidate: unknown) => Promise<string> = hashPassword,
   ) {}
 
   private now(): Date {
@@ -102,7 +106,17 @@ export class PasswordRecoveryService {
     if (!resolved.eligible) {
       // Not a candidate address, unknown, disabled, or no credential. Each of these pays a real
       // verification so none is distinguishable by duration alone.
-      await this.guarded(() => this.burnVerification(), 'forgot', requestId);
+      try {
+        await this.guarded(() => this.burnVerification(), 'forgot', requestId);
+      } catch (error) {
+        // Stage 2.9. The burn exists only to equalise cost, and an eligible request performs no Argon2id at
+        // all. If the global budget declines at this moment, answering 429 here would turn the refusal into a
+        // status-code difference between an ineligible address and an eligible one, so the burn is skipped and
+        // the request still answers its fixed `202`. The guard has already refused every request equally while
+        // the budget was visibly empty; this only covers the narrow race after that check.
+        if (error instanceof AuthError && error.code === 'RATE_LIMITED') return;
+        throw error;
+      }
       // Stage 2.7. No event on this branch, and that is load-bearing rather than an omission: recording
       // anything here would turn "we issued a token" into a readable difference between eligible and
       // ineligible requests. Eligibility is observable only through the delivery inbox, as it must be.
@@ -122,26 +136,33 @@ export class PasswordRecoveryService {
       //
       // Stage 2.7. The event is the third statement in this batch, so the token and its audit record
       // commit together. A recovery request that rolls back leaves no row claiming a token was issued.
-      await this.database.$transaction([
-        this.database.passwordResetToken.updateMany({
+      //
+      // Stage 2.9. The same per-user advisory lock that login and reset take, held for the whole transaction.
+      // Without it two concurrent requests each superseded the tokens they could see and each inserted a new
+      // one, so up to three links were valid at once and "only the newest link works" did not hold. Now issuance
+      // is strictly ordered against other issuance, against reset, and against login for this user, and remains
+      // independent across users.
+      await this.database.$transaction(async (tx) => {
+        await lockUserSessionMutations(tx, user.id);
+        await tx.passwordResetToken.updateMany({
           where: { userId: user.id, usedAt: null },
           data: { usedAt: issuedAt },
-        }),
-        this.database.passwordResetToken.create({
+        });
+        await tx.passwordResetToken.create({
           data: { userId: user.id, tokenHash, createdAt: issuedAt, expiresAt },
           select: { id: true },
-        }),
+        });
         // Built by the recorder's own row function, so this write passes the same closed-vocabulary and
-        // UUID checks as every other event even though it has to be a batch member.
-        this.database.authenticationEvent.create({
+        // UUID checks as every other event.
+        await tx.authenticationEvent.create({
           data: securityEventRow({
             eventType: 'PASSWORD_RESET_REQUESTED',
             userId: user.id,
             requestId,
           }),
           select: { id: true },
-        }),
-      ]);
+        });
+      });
     } catch {
       throw new AuthError('SERVICE_FAILURE');
     }
@@ -232,17 +253,24 @@ export class PasswordRecoveryService {
     // Stage 2.6 hardening: the hash takes a deployment-wide Argon2id slot, so simultaneous resets
     // cannot each allocate 64 MiB. The slot is released before the transaction opens, which preserves
     // the accepted property that no connection is ever held across an allocation.
+    // Stage 2.9. A policy rejection is decided before any Argon2id slot or budget is taken, so it costs neither.
+    // The token is left unconsumed so the user can retry.
+    if (!validatePassword(newPassword).valid) throw new AuthError('INVALID_PASSWORD');
+
     let passwordHash: string;
     try {
-      passwordHash = await this.guarded(() => hashPassword(newPassword), 'reset', requestId);
+      passwordHash = await this.guarded(() => this.hash(newPassword), 'reset', requestId);
     } catch (error) {
-      // An admission refusal is an operational outcome and must not be reported as a policy violation:
-      // the two are distinguishable to the client, and conflating them would both mislead the user and
-      // disclose that no hashing was attempted.
+      // An admission refusal is an operational outcome and must not be reported as a policy violation.
       if (error instanceof AuthError) throw error;
-      // The accepted hasher rejects a policy-invalid candidate. That is a safe validation error and
-      // carries no account information. The token is left unconsumed so the user can retry.
-      throw new AuthError('INVALID_PASSWORD');
+      // Only the hasher's own policy rejection is a validation error. Anything else - a native or allocation
+      // failure - is an internal failure and must not be reported as a bad password: that told the user to
+      // change a password that was fine. Nothing was written, the token is still unconsumed, and the response
+      // is the same fixed `503` every other operational failure uses.
+      if (error instanceof PasswordCredentialError && error.code === 'INVALID_PASSWORD') {
+        throw new AuthError('INVALID_PASSWORD');
+      }
+      throw new AuthError('SERVICE_FAILURE');
     }
 
     try {
@@ -393,6 +421,16 @@ export class PasswordRecoveryService {
       return await withArgon2idSlot(this.argon2id, work);
     } catch (error) {
       if (error instanceof Argon2idAdmissionRefused) {
+        if (error.refusal === 'budget') {
+          // Stage 2.9. The global Argon2id budget declined at the moment hashing would have started: no
+          // Argon2id ran and nothing was written. It is the same `429` the guard answers with.
+          this.securityLog.record('auth_rate_limited', {
+            endpoint: endpoint === 'reset' ? 'reset' : 'forgot',
+            requestId,
+            reason: 'rate_limited',
+          });
+          throw new AuthError('RATE_LIMITED', error.retryAfterSeconds);
+        }
         this.securityLog.record('argon2id_admission_refused', {
           endpoint,
           requestId,

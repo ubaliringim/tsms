@@ -30,7 +30,7 @@ The lockfile is authoritative. Install scripts are explicitly allowed for requir
 
 Before running an individual API/worker dev command, run `pnpm --filter @tsms/config build`. `pnpm dev` builds shared dependencies and runs all development processes through Turbo; individual commands are often more convenient. API/worker `start` runs compiled output after `pnpm build`. Web/Control `start` runs their production Next.js builds. The worker currently only exposes process liveness; no queue is connected.
 
-Mobile uses Expo SDK 57 with its matched React/React Native versions. `mobile:check` checks SDK dependency compatibility; `mobile:export` verifies Android JS bundling. Native device/emulator and store-signed builds are separate validation and are not implied by these checks. There is intentionally no mobile `build` script in the root build graph.
+Mobile uses Expo SDK 57 with its matched React/React Native versions. `mobile:check` checks SDK dependency compatibility online (CI runs it offline for reproducibility, and `mobile:check:live` reports Expo's currently advertised patch; see [docs/architecture/MOBILE_COMPATIBILITY.md](docs/architecture/MOBILE_COMPATIBILITY.md)); `mobile:export` verifies Android JS bundling. Native device/emulator and store-signed builds are separate validation and are not implied by these checks. There is intentionally no mobile `build` script in the root build graph.
 
 ## Environment strategy
 

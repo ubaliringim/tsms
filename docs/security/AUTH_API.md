@@ -184,11 +184,23 @@ decoy paths, so the two remain symmetric.
 This is **not** a claim of constant-time HTTP authentication. `verifyPassword` returns before
 Argon2 for a policy-invalid candidate, the database round trips are not equalised, network jitter
 dominates on any real link, and a single request's cost is not reduced by Stage 2.6 rate limiting.
-What is claimed is that an observer cannot separate "no such account" from "wrong password" by
-watching the cost of a single request. Stage 2.6 bounds how many attempts a client and an account may
-make, which removes the unbounded repeated-sampling channel in practice; it does not make the single
-comparison constant-time, and the enumeration-resistance tests still assert response equality rather
-than timing equality.
+
+**Stage 2.9 correction.** An earlier version of this section claimed that an observer cannot separate "no such
+account" from "wrong password" by watching the cost of a single request. That was **not true**. For an active
+account with a valid-length wrong password the code verified against the stored digest and, on a mismatch,
+verified again against the decoy, so it ran Argon2id twice while an unknown address, a disabled account, and an
+account without a credential ran it once. Measured with an Argon2 call counter that is 2 versus 1, which is
+about 322 ms against about 160 ms in a pure-CPU measurement: a gap far larger than network jitter, and a working
+account-existence oracle for anyone who could send valid-length passwords.
+
+Every path now performs **exactly one** Argon2id verification. One read returns the user and its credential; a
+single verification runs against the real digest when the account is active and has a credential, and against
+the decoy otherwise; and the result is believed only when it was a verification against the account's own
+digest. The comparable paths (existing account with a wrong password, unknown address, disabled account, account
+without a credential, successful login) are asserted at 1 by a deterministic call-count test, and a policy-invalid
+candidate remains 0 on every path. Timing is supplementary evidence only; no security assertion rests on a
+threshold. Remaining differences are real and unclaimed: the success path additionally takes the advisory lock and
+inserts a session, and database round trips are not otherwise equalised.
 
 ### Rehash on login
 
@@ -218,6 +230,16 @@ login must not reject a stored password on creation-time grounds.
 
 The JSON body limit is 4 KiB, applied at the adapter, before parsing. An oversized body is `413`
 with a fixed body.
+
+## Successful-login limit (provisional)
+
+Stage 2.9. Each account may complete **10 successful logins per 10 minutes**. The budget is spent after the
+password has verified and before any session exists, so a refused login creates no session and no `LOGIN_SUCCEEDED`
+event, and it is returned if session creation then fails. While an account is at its limit, the correct password
+and a wrong one receive the same `429` with `Retry-After`, so the limit is not a credential oracle. Failed attempts
+never consume it, and it is per account, so one account cannot affect another. It exists because successful logins
+were previously free on every meter except the global Argon2id budget; see
+[RATE_LIMITING.md](RATE_LIMITING.md). The value is provisional.
 
 ## Logout concurrency
 

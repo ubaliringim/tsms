@@ -42,6 +42,18 @@ import {
 } from '@tsms/redis';
 import { randomBytes } from 'node:crypto';
 import { ARGON2ID_CONCURRENCY } from './auth-abuse-policy.js';
+import type { MeterOutcome } from './meter-outcome.js';
+
+/**
+ * The deployment-wide budget on Argon2id operations *started* - Stage 2.9.
+ *
+ * Charged here, at the one place every Argon2id operation is admitted, and nowhere else. A request that performs
+ * no Argon2id - a malformed body, an origin refusal, an eligible recovery request - therefore never spends it,
+ * and a request that does spend it spends exactly once, whatever the route that led here.
+ */
+export interface Argon2idWorkloadBudget {
+  charge(): Promise<MeterOutcome>;
+}
 
 /**
  * Refusal reasons, kept separate so neither can be mistaken for an authentication outcome.
@@ -50,12 +62,14 @@ import { ARGON2ID_CONCURRENCY } from './auth-abuse-policy.js';
  * first is saturation, the second is an unknown bound. They are kept as distinct values so a future
  * operator-facing metric can tell them apart without either becoming visible to a client.
  */
-export type Argon2idRefusal = 'saturated' | 'unavailable';
+export type Argon2idRefusal = 'saturated' | 'unavailable' | 'budget';
 
 export class Argon2idAdmissionRefused extends Error {
   constructor(
     readonly refusal: Argon2idRefusal,
     readonly held: number,
+    /** Set only for `budget`: the bounded wait before the global Argon2id budget has a token again. */
+    readonly retryAfterSeconds?: number,
   ) {
     super(`Argon2id admission refused: ${refusal}`);
     this.name = 'Argon2idAdmissionRefused';
@@ -93,6 +107,11 @@ export class Argon2idAdmissionService {
 
   constructor(
     private readonly redis: Redis,
+    /**
+     * Stage 2.9. Required, not optional: an admission service without the workload budget would silently stop
+     * bounding Argon2id work started per window.
+     */
+    private readonly workload: Argon2idWorkloadBudget,
     private readonly options: Argon2idAdmissionOptions = DEFAULT_OPTIONS,
   ) {}
 
@@ -121,6 +140,24 @@ export class Argon2idAdmissionService {
     }
 
     if (!decision.acquired) throw new Argon2idAdmissionRefused('saturated', decision.held);
+
+    // Stage 2.9. Charge the global budget now, before any hashing, and only because hashing is about to start.
+    // The slot is already held, so the charge is not spent on a request the semaphore would have refused, and it
+    // is the single charge for this operation. Any outcome other than `charged` releases the slot and refuses
+    // before Argon2id runs; an unexpected error releases it too, so capacity cannot leak.
+    let charge: MeterOutcome;
+    try {
+      charge = await this.workload.charge();
+    } catch (error) {
+      await this.release(holder);
+      throw error;
+    }
+    if (charge.kind !== 'charged') {
+      await this.release(holder);
+      throw charge.kind === 'limited'
+        ? new Argon2idAdmissionRefused('budget', decision.held, charge.retryAfterSeconds)
+        : new Argon2idAdmissionRefused('unavailable', decision.held);
+    }
 
     this.startRenewal(holder);
     return { release: () => this.release(holder) };

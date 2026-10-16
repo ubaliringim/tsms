@@ -282,6 +282,8 @@ describe('authentication error bodies', () => {
 
 describe('trusted origin configuration', () => {
   const base = {
+    // Stage 2.9: NODE_ENV has no default, so every fixture states it.
+    NODE_ENV: 'test',
     DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/tsms',
     REDIS_URL: 'redis://:p@127.0.0.1:6379',
     // Stage 2.6 requires the rate-limit key secret too. Supplying a valid one here keeps these

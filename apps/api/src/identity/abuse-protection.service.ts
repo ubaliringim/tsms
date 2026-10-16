@@ -66,11 +66,18 @@ import {
   type AbuseEndpoint,
 } from './auth-abuse-policy.js';
 import { hashRecoveryToken } from './password-recovery-token.js';
+import type { MeterOutcome } from './meter-outcome.js';
 
 export type AbuseDecisionKind = 'allowed' | 'limited' | 'unavailable';
 
 export interface AbuseDecision {
   readonly kind: AbuseDecisionKind;
+  /**
+   * True only when this request took a reservation that a non-abuse outcome should return. A malformed request
+   * reserves nothing, so nothing may be refunded for it: returning a token that was never taken would hand the
+   * caller free budget against its own failed logins.
+   */
+  readonly reserved: boolean;
   /** Whole seconds, already clamped. Zero when allowed or unavailable. */
   readonly retryAfterSeconds: number;
   /** True when the endpoint's own policy allows it to run without confirmed enforcement. */
@@ -79,6 +86,7 @@ export interface AbuseDecision {
 
 const ALLOWED: AbuseDecision = Object.freeze({
   kind: 'allowed',
+  reserved: false,
   retryAfterSeconds: 0,
   proceeds: true,
 });
@@ -91,6 +99,11 @@ export interface AbuseRequestContext {
   readonly normalizedEmail: string | null;
   /** Submitted recovery token, hashed before it can reach a key. */
   readonly recoveryToken?: string | undefined;
+  /**
+   * Stage 2.9. False when the controller would reject the body as malformed (decided by the same function the
+   * controller uses). A malformed request is metered on its own small per-source meter and nothing else.
+   */
+  readonly wellFormed: boolean;
 }
 
 /**
@@ -151,6 +164,54 @@ function targetDimension(
   };
 }
 
+/** Build the malformed-request dimension, or `null` for an endpoint with no body to be malformed. */
+function invalidDimension(
+  secret: string,
+  endpoint: AbuseEndpoint,
+  context: AbuseRequestContext,
+): RateLimitDimension | null {
+  const policy = policyFor(endpoint, 'invalid');
+  if (policy === null) return null;
+  return {
+    ...toRateLimitDimension(
+      policy,
+      deriveAbuseKey(secret, endpoint, 'invalid', context.clientAddress),
+    ),
+    commit: true,
+  };
+}
+
+/** Build the per-account success dimension, or `null` when there is no policy or no usable address. */
+function successDimension(
+  secret: string,
+  endpoint: AbuseEndpoint,
+  normalizedEmail: string | null,
+  commit: boolean,
+): RateLimitDimension | null {
+  const policy = policyFor(endpoint, 'success');
+  if (policy === null || normalizedEmail === null) return null;
+  return {
+    ...toRateLimitDimension(policy, deriveAbuseKey(secret, endpoint, 'success', normalizedEmail)),
+    commit,
+  };
+}
+
+/** The global Argon2id workload dimension. */
+function workloadDimension(secret: string, commit: boolean): RateLimitDimension {
+  return {
+    ...toRateLimitDimension(
+      {
+        endpoint: 'login',
+        dimension: 'workload',
+        ...GLOBAL_ARGON2ID_BUDGET,
+        requiresEnforcement: true,
+      },
+      globalWorkloadKey(secret),
+    ),
+    commit,
+  };
+}
+
 /**
  * Build the dimensions consulted before the handler runs.
  *
@@ -161,9 +222,8 @@ function targetDimension(
  * charge follows the outcome in {@link AbuseProtectionService.recordFailure}. That is what lets a
  * legitimate success cost nothing.
  *
- * The global verification budget is `commit: true` on every endpoint either way. It is the hard bound
- * on Argon2id work and is spent unconditionally, because an existing and a nonexistent account both
- * verify on every login by design.
+ * The global verification budget and the per-account success budget are `commit: false` here: they are
+ * checked, not spent (Stage 2.9). They are charged where the work they measure actually happens.
  *
  * Exported so the composition can be asserted directly, without Redis, and so a policy change that
  * adds or drops a dimension is visible as a failing test rather than as a silently weaker control.
@@ -173,31 +233,30 @@ export function dimensionsFor(
   endpoint: AbuseEndpoint,
   context: AbuseRequestContext,
 ): RateLimitDimension[] {
-  // Stage 2.6 hardening. Admission now **reserves** on every endpoint, including the failure-metered
-  // ones.
-  //
-  // Reserving unconditionally is what closes the concurrency bypass. A check that writes nothing lets
-  // every simultaneous request read the same untouched bucket, so N concurrent failures all pass an
-  // allowance of 8 and all reach Argon2id. A reservation makes them genuinely contend for the same
-  // tokens, and the token bucket's atomicity bounds the burst to the configured capacity.
-  //
-  // Legitimate fairness is preserved by refunding: {@link AbuseProtectionService.refundFor} returns
-  // the reservation whenever the attempt was not an authentication failure, so a correct sign-in still
-  // costs nothing while a burst of failures stays bounded.
+  // Stage 2.9. A request the controller would reject as malformed is not an authentication attempt and performs
+  // no Argon2id. It is metered on its own per-source meter and on nothing else, so it can neither drain the
+  // credential meters or the global budget nor be free.
+  if (!context.wellFormed) {
+    const invalid = invalidDimension(secret, endpoint, context);
+    return invalid === null ? [] : [invalid];
+  }
+
+  // Stage 2.6 hardening. Admission **reserves** on the credential dimensions, including the failure-metered
+  // ones, so concurrent requests genuinely contend for the same tokens instead of all reading an untouched
+  // bucket. The reservation is returned by {@link AbuseProtectionService.refundFor} when the attempt was not an
+  // authentication failure.
   const dimensions = [
     sourceDimension(secret, endpoint, context, true),
     targetDimension(secret, endpoint, context, true),
   ].filter((dimension): dimension is RateLimitDimension => dimension !== null);
 
-  if (metersGlobalWorkload(endpoint)) {
-    dimensions.push({
-      ...toRateLimitDimension(
-        { endpoint, dimension: 'workload', ...GLOBAL_ARGON2ID_BUDGET, requiresEnforcement: true },
-        globalWorkloadKey(secret),
-      ),
-      commit: true,
-    });
-  }
+  // Stage 2.9. The global Argon2id budget and the per-account success budget are only CHECKED here
+  // (`commit: false`), so an exhausted budget refuses cheaply before the handler runs, but nothing is spent for a
+  // request that may never reach Argon2id. The budget is charged where Argon2id is actually admitted
+  // (`Argon2idAdmissionService.acquire`), and the success budget where a login is actually authenticated.
+  if (metersGlobalWorkload(endpoint)) dimensions.push(workloadDimension(secret, false));
+  const success = successDimension(secret, endpoint, context.normalizedEmail, false);
+  if (success !== null) dimensions.push(success);
 
   return dimensions;
 }
@@ -205,9 +264,9 @@ export function dimensionsFor(
 /**
  * Build the credential dimensions whose reservation is returned for a non-abuse outcome.
  *
- * Only the credential meters: the global verification budget was already spent before the handler ran,
- * and it deliberately measures work *started*, so it is never refunded. A token bucket that hands back
- * its own admission control would be self-defeating.
+ * Only the credential meters. The global verification budget is charged where Argon2id is admitted, and it
+ * deliberately measures work *started*, so it is never refunded: a token bucket that hands back its own
+ * admission control would be self-defeating.
  *
  * Empty for request-metered endpoints, whose meters are final and must not be refunded - returning those
  * tokens would let a caller keep `forgot` unbounded by interleaving.
@@ -217,6 +276,9 @@ export function refundableDimensionsFor(
   endpoint: AbuseEndpoint,
   context: AbuseRequestContext,
 ): RateLimitDimension[] {
+  // Stage 2.9. A malformed request reserved nothing (it is metered on its own meter), so there is nothing to
+  // return. Returning tokens that were never taken would credit the caller against its own failed attempts.
+  if (!context.wellFormed) return [];
   if (countsEveryRequest(endpoint)) return [];
   return [
     sourceDimension(secret, endpoint, context, true),
@@ -264,11 +326,64 @@ export class AbuseProtectionService {
     if (!verdict.allowed) {
       return {
         kind: 'limited',
+        reserved: false,
         retryAfterSeconds: retryAfterSeconds(verdict.retryAfterMillis),
         proceeds: false,
       };
     }
-    return ALLOWED;
+    // Only a well-formed request on a failure-metered endpoint took a reservation worth returning.
+    const reserved = refundableDimensionsFor(this.options.secret, endpoint, context).length > 0;
+    return reserved ? { ...ALLOWED, reserved: true } : ALLOWED;
+  }
+
+  /**
+   * Charge the global Argon2id budget for one operation that is about to start.
+   *
+   * Called from exactly one place - the Argon2id admission choke point - and atomic: it is one script
+   * invocation on one dimension. It reports `limited` with a bounded retry hint, `unavailable` when Redis
+   * could not confirm the charge (the caller then refuses without hashing), or `charged`.
+   */
+  async chargeGlobalWorkload(): Promise<MeterOutcome> {
+    return this.consumeOne(workloadDimension(this.options.secret, true));
+  }
+
+  /**
+   * Charge the per-account success budget for one login that has just authenticated.
+   *
+   * Called after the password verified and before a session exists, so a refusal creates nothing.
+   */
+  async chargeLoginSuccess(normalizedEmail: string): Promise<MeterOutcome> {
+    const dimension = successDimension(this.options.secret, 'login', normalizedEmail, true);
+    // No policy or no usable address is a programming fault, never a licence to skip the meter.
+    if (dimension === null) throw new Error('A login success needs a normalised address');
+    return this.consumeOne(dimension);
+  }
+
+  /** Return a success charge when the login then failed to produce a session. Never throws. */
+  async refundLoginSuccess(normalizedEmail: string): Promise<void> {
+    const dimension = successDimension(this.options.secret, 'login', normalizedEmail, true);
+    if (dimension === null) return;
+    try {
+      await refundRateLimit(this.options.redis, [dimension], {
+        ...(this.options.timeoutMillis === undefined
+          ? {}
+          : { timeoutMillis: this.options.timeoutMillis }),
+      });
+    } catch {
+      // A lost refund costs this account one unit of its own allowance.
+    }
+  }
+
+  private async consumeOne(dimension: RateLimitDimension): Promise<MeterOutcome> {
+    try {
+      const verdict = await this.enforce([dimension]);
+      return verdict.allowed
+        ? { kind: 'charged' }
+        : { kind: 'limited', retryAfterSeconds: retryAfterSeconds(verdict.retryAfterMillis) };
+    } catch (error) {
+      if (error instanceof RateLimitUnavailableError) return { kind: 'unavailable' };
+      throw error;
+    }
   }
 
   /**
@@ -312,8 +427,8 @@ export class AbuseProtectionService {
   private unavailable(endpoint: AbuseEndpoint): AbuseDecision {
     const policy = policyFor(endpoint, 'source');
     if (policy?.requiresEnforcement === true) {
-      return { kind: 'unavailable', retryAfterSeconds: 0, proceeds: false };
+      return { kind: 'unavailable', reserved: false, retryAfterSeconds: 0, proceeds: false };
     }
-    return { kind: 'unavailable', retryAfterSeconds: 0, proceeds: true };
+    return { kind: 'unavailable', reserved: false, retryAfterSeconds: 0, proceeds: true };
   }
 }

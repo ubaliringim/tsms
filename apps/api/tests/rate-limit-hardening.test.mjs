@@ -265,14 +265,29 @@ describe('reservation refund', () => {
 });
 
 describe('reservation semantics after hardening', () => {
-  const context = { clientAddress: '203.0.113.10', normalizedEmail: 'person@example.test' };
+  const context = {
+    clientAddress: '203.0.113.10',
+    normalizedEmail: 'person@example.test',
+    wellFormed: true,
+  };
 
-  it('reserves every dimension at admission, so concurrent requests contend', () => {
+  it('reserves every credential dimension at admission, so concurrent requests contend', () => {
+    // Stage 2.9. The global Argon2id budget and the per-account success budget are the only dimensions that are
+    // checked without being charged at admission: they are charged where the work they measure happens. Every
+    // credential dimension is still reserved, which is the concurrency fix this test originally pinned.
+    const peekOnly = new Set([
+      globalWorkloadKey(SECRET),
+      deriveAbuseKey(SECRET, 'login', 'success', 'person@example.test'),
+    ]);
     for (const endpoint of ['login', 'reset']) {
       const dimensions = dimensionsFor(SECRET, endpoint, context);
       expect(dimensions.length).toBeGreaterThan(0);
-      // The whole fix: nothing is checked-without-charge any more.
-      expect(dimensions.every((dimension) => dimension.commit === true)).toBe(true);
+      const credential = dimensions.filter((dimension) => !peekOnly.has(dimension.key));
+      expect(credential).toHaveLength(2);
+      expect(credential.every((dimension) => dimension.commit === true)).toBe(true);
+      for (const dimension of dimensions.filter((d) => peekOnly.has(d.key))) {
+        expect(dimension.commit).toBe(false);
+      }
     }
   });
 
@@ -298,7 +313,13 @@ describe('reservation semantics after hardening', () => {
   it('still meters every request on the request-metered endpoints', () => {
     for (const endpoint of ['forgot', 'me', 'logout']) {
       expect(countsEveryRequest(endpoint)).toBe(true);
-      expect(dimensionsFor(SECRET, endpoint, context).every((d) => d.commit)).toBe(true);
+      // Source (and target, for forgot) are spent at admission. Only the global Argon2id budget, which forgot
+      // consults, is check-only (Stage 2.9).
+      const metered = dimensionsFor(SECRET, endpoint, context).filter(
+        (d) => d.key !== globalWorkloadKey(SECRET),
+      );
+      expect(metered.length).toBeGreaterThan(0);
+      expect(metered.every((d) => d.commit)).toBe(true);
     }
     expect(countsEveryRequest('login')).toBe(false);
     expect(countsEveryRequest('reset')).toBe(false);

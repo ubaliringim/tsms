@@ -25,8 +25,7 @@ import { createRedisClient, closeRedis } from '@tsms/redis';
 import { hashPassword } from '../../dist/identity/password-hasher.js';
 import { PasswordRecoveryService } from '../../dist/identity/password-recovery.service.js';
 import { InMemoryRecoveryDelivery } from '../../dist/identity/password-recovery-delivery.js';
-import { Argon2idAdmissionService } from '../../dist/identity/argon2id-admission.service.js';
-import { ARGON2ID_CONCURRENCY } from '../../dist/identity/auth-abuse-policy.js';
+import { admissionFor } from '../support/stage29-wiring.mjs';
 import { SecurityLog } from '../../dist/identity/security-log.js';
 import { SecurityEventRecorder } from '../../dist/identity/security-event-recorder.js';
 import {
@@ -66,7 +65,7 @@ const recovery = new PasswordRecoveryService(
   observed,
   new InMemoryRecoveryDelivery(),
   { mode: 'development-only', urlBase: 'https://app.example.test/r' },
-  new Argon2idAdmissionService(redis, ARGON2ID_CONCURRENCY),
+  admissionFor(redis),
   new SecurityEventRecorder(observed, log),
   log,
 );

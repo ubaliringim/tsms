@@ -77,7 +77,11 @@ function launch(name, args, env = {}) {
     cwd: root,
     env: {
       ...process.env,
-      NODE_ENV: 'production',
+      // Stage 2.9. The API and worker refuse to start in production on the development fixtures this script
+      // uses (plain `redis:`, no `sslmode`, loopback origins, the example secret), and that is asserted below.
+      // So their liveness runs under test mode, where those fixtures are legitimate, and the production
+      // refusals are checked explicitly. The Next servers are real production builds and say so.
+      NODE_ENV: 'test',
       NEXT_TELEMETRY_DISABLED: '1',
       ...localInfrastructure,
       ...env,
@@ -138,6 +142,42 @@ async function rejectsMissingInfrastructureUrl(name, missingKey) {
   console.log(`PASS ${name} fails fast when ${missingKey} is missing without leaking credentials`);
 }
 
+/**
+ * Stage 2.9 (F-06). A production start on development fixtures must fail fast, name the violated keys, and reveal
+ * none of the values. `env` overlays the development fixtures this script carries.
+ */
+async function rejectsProduction(name, env, keys) {
+  const record = launch(`${name}-production-${keys.join('-')}`, [`apps/${name}/dist/main.js`], {
+    NODE_ENV: 'production',
+    ...env,
+  });
+  const deadline = Date.now() + 30000;
+  while (record.child.exitCode === null && !record.error && Date.now() < deadline) await delay(50);
+  assert.equal(record.error, null);
+  assert.equal(
+    record.child.exitCode,
+    1,
+    `${name} must refuse a production start: ${keys.join(', ')}`,
+  );
+  assert.match(record.output, /Invalid environment configuration: /);
+  // A plain substring is enough: every key name is distinctive, and it avoids a regex-escaping hazard.
+  for (const key of keys) assert.ok(record.output.includes(key), `${name} output must name ${key}`);
+  for (const value of [
+    'tsms_local_development',
+    'tsms_local_redis',
+    'replace_in_production',
+    localInfrastructure.API_TRUSTED_ORIGINS.split(',')[0],
+  ]) {
+    assert.ok(
+      !record.output.includes(value),
+      `${name} startup output must not echo a rejected value`,
+    );
+  }
+  console.log(
+    `PASS ${name} refuses a production start (${keys.join(', ')}) without echoing a value`,
+  );
+}
+
 async function rejectsMalformedInfrastructureUrl(name, key, value) {
   const record = launch(`${name}-malformed-${key}`, [`apps/${name}/dist/main.js`], {
     [key]: value,
@@ -152,6 +192,24 @@ async function rejectsMalformedInfrastructureUrl(name, key, value) {
 }
 
 try {
+  // Stage 2.9: production fails closed on the development fixtures, and NODE_ENV has no default.
+  await rejectsProduction('api', {}, [
+    'API_HOST',
+    'DATABASE_URL',
+    'REDIS_URL',
+    'API_TRUSTED_ORIGINS',
+    'API_RATE_LIMIT_HMAC_SECRET',
+  ]);
+  await rejectsProduction('worker', {}, ['DATABASE_URL', 'REDIS_URL']);
+  for (const name of ['api', 'worker']) {
+    const record = launch(`${name}-no-node-env`, [`apps/${name}/dist/main.js`], { NODE_ENV: '' });
+    const deadline = Date.now() + 30000;
+    while (record.child.exitCode === null && !record.error && Date.now() < deadline)
+      await delay(50);
+    assert.equal(record.child.exitCode, 1, `${name} must not start without NODE_ENV`);
+    assert.match(record.output, /Invalid environment configuration: NODE_ENV/);
+    console.log(`PASS ${name} refuses to start without an explicit NODE_ENV`);
+  }
   await rejectsInvalidEnvironment('api', { API_PORT: 'private-invalid-value' });
   await rejectsInvalidEnvironment('worker', { WORKER_HEALTH_PORT: 'private-invalid-value' });
   await rejectsMissingInfrastructureUrl('api', 'DATABASE_URL');
@@ -240,7 +298,7 @@ try {
       ],
       // Stage 2.8: the web proxy must not fall back to a development API address in production, so the
       // smoke run deliberately leaves its upstream unconfigured whatever the developer's shell exports.
-      name === 'web' ? { TSMS_API_ORIGIN: '' } : {},
+      name === 'web' ? { NODE_ENV: 'production', TSMS_API_ORIGIN: '' } : { NODE_ENV: 'production' },
     );
     const response = await waitFor(record, `http://127.0.0.1:${port}/`);
     assert.ok((await response.text()).includes(heading));

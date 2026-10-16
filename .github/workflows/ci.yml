@@ -74,7 +74,11 @@ jobs:
       # Integration tests run explicitly, against the Compose services.
       - run: pnpm test:integration
 
-      - run: pnpm mobile:check
+      # Offline on purpose: validates against the compatibility metadata bundled with the INSTALLED expo, so the
+      # result depends on the lockfile and not on what Expo's servers advertise today. It does not check Expo's
+      # advertised minimum `expo` patch; the `expo-live-diagnostic` job reports that separately and does not
+      # replace this gate. See docs/architecture/MOBILE_COMPATIBILITY.md.
+      - run: EXPO_OFFLINE=1 pnpm mobile:check
       - run: pnpm mobile:export
       - run: pnpm smoke
 
@@ -114,3 +118,58 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Dependency security audit (expected to fail on accepted advisories)
         run: pnpm audit --audit-level=high
+
+  # Differential audit - Stage 2.9 (F-07).
+  #
+  # `security-audit` above is unchanged and still fails on the two accepted advisories, so it cannot tell a third
+  # finding from the two it already reports. This job can: it reads the live `pnpm audit --json` result and
+  # compares it with the exact, reviewed baseline in docs/security/audit-baseline.json.
+  #
+  # It is GREEN only when the findings are exactly that baseline. It goes RED for a new advisory at moderate
+  # severity or above, a changed finding, a resolved finding that has not been reviewed, a failed audit command,
+  # or output it cannot read. It never suppresses a finding, never rewrites the baseline, and never means the
+  # dependency audit is clean: the workflow stays red while `security-audit` fails.
+  security-audit-diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Compare audit findings with the documented baseline
+        run: node scripts/audit-diff.mjs --run
+
+  # Live Expo compatibility diagnostic - INFORMATIONAL.
+  #
+  # The `validate` job checks Expo compatibility offline (EXPO_OFFLINE=1) so that it is reproducible. This job
+  # asks the live question that gate cannot: is the installed `expo` patch below the minimum Expo currently
+  # advertises? It runs the unchanged online `pnpm mobile:check` through scripts/expo-live-check.mjs, which
+  # separates a genuine incompatibility (exit 1) from a registry or network failure (exit 2) and never reports
+  # an online incompatibility as a pass.
+  #
+  # `continue-on-error` is on purpose and applies to this job only: Expo publishes patches on its own schedule, and
+  # a 24-hour dependency policy means the installed patch can legitimately lag. The result is still visible as a
+  # warning annotation and in the job summary. It never replaces the offline gate in `validate`, and Expo's remote
+  # requirements must be reviewed before production deployment (docs/architecture/MOBILE_COMPATIBILITY.md).
+  expo-live-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Live Expo compatibility (informational)
+        run: pnpm mobile:check:live

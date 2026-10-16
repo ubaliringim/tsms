@@ -33,6 +33,10 @@
  * | `GET /auth/me`          | 120 per 1 min                | none                         | Proportionate flood control only; it is not a guessing surface.        |
  * | `POST /auth/logout`     | 30 per 1 min                 | none                         | Proportionate; must not become a denial of service against a user.     |
  *
+ * Stage 2.9 additions (all provisional): `login`/`forgot`/`reset` also have a malformed-request meter of 30 per
+ * 5 min per source, and `login` has a per-account success meter of 10 per 10 min. See
+ * docs/security/RATE_LIMITING.md.
+ *
  * A failed login costs both dimensions, so a distributed attacker is bounded by whichever it exhausts
  * first, and a shared-NAT site is bounded per account rather than being shut out wholesale.
  *
@@ -78,8 +82,16 @@ const MAX_SUBJECT_LENGTH = 512;
 /** The five authenticated endpoints, named as policy keys. */
 export type AbuseEndpoint = 'login' | 'forgot' | 'reset' | 'me' | 'logout';
 
-/** The two dimensions a request can be metered on. */
-export type AbuseDimension = 'source' | 'target' | 'workload';
+/**
+ * The dimensions a request can be metered on.
+ *
+ * - `source` / `target`: the credential meters. Reserved at admission, returned for a non-abuse outcome.
+ * - `workload`: the global Argon2id budget. Charged only where an Argon2id operation is actually admitted
+ *   (Stage 2.9), never at request admission.
+ * - `invalid`: a cheap per-source meter for requests the controller would reject as malformed (Stage 2.9).
+ * - `success`: a per-account meter on successful logins (Stage 2.9).
+ */
+export type AbuseDimension = 'source' | 'target' | 'workload' | 'invalid' | 'success';
 
 /**
  * One meter: capacity per window.
@@ -264,6 +276,41 @@ export const AUTH_ABUSE_POLICIES: readonly AbusePolicy[] = Object.freeze([
     dimension: 'target',
     capacity: 10,
     windowMillis: 15 * 60_000,
+    requiresEnforcement: true,
+  }),
+  // Stage 2.9. A request the controller would reject as malformed performs no Argon2id and is not an
+  // authentication attempt, so it is metered on its own cheap per-source bucket instead of on the credential
+  // meters or the global budget. Provisional: chosen to be far above what honest clients produce and far below
+  // what would make malformed traffic free.
+  Object.freeze({
+    endpoint: 'login',
+    dimension: 'invalid',
+    capacity: 30,
+    windowMillis: 5 * 60_000,
+    requiresEnforcement: true,
+  }),
+  Object.freeze({
+    endpoint: 'forgot',
+    dimension: 'invalid',
+    capacity: 30,
+    windowMillis: 5 * 60_000,
+    requiresEnforcement: true,
+  }),
+  Object.freeze({
+    endpoint: 'reset',
+    dimension: 'invalid',
+    capacity: 30,
+    windowMillis: 5 * 60_000,
+    requiresEnforcement: true,
+  }),
+  // Stage 2.9. Successful logins per account. Provisional: 10 per 10 minutes. It bounds how many sessions and
+  // `LOGIN_SUCCEEDED` events one account can create and how much of the global Argon2id budget one account can
+  // consume, without penalising failures, which have their own meters.
+  Object.freeze({
+    endpoint: 'login',
+    dimension: 'success',
+    capacity: 10,
+    windowMillis: 10 * 60_000,
     requiresEnforcement: true,
   }),
   Object.freeze({

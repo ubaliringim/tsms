@@ -13,9 +13,10 @@
     "build": "turbo run build",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test && node --test tests/toolchain.test.mjs",
+    "test": "turbo run test && node --test tests/toolchain.test.mjs tests/audit-diff.test.mjs tests/expo-live-check.test.mjs tests/expo-live-check-safety.test.mjs",
     "test:integration": "pnpm db:test:migrate && turbo run test:integration --filter=@tsms/redis && turbo run test:integration --filter=!@tsms/redis",
     "test:e2e": "turbo run test:e2e --filter=@tsms/web",
+    "audit:diff": "node scripts/audit-diff.mjs --run",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
@@ -30,6 +31,7 @@
     "db:reset": "pnpm --filter @tsms/database db:reset",
     "db:test:migrate": "pnpm --filter @tsms/database db:test:migrate",
     "mobile:check": "pnpm --filter @tsms/student-mobile exec expo install --check",
+    "mobile:check:live": "node scripts/expo-live-check.mjs",
     "mobile:export": "pnpm --filter @tsms/student-mobile export:android"
   },
   "devDependencies": {

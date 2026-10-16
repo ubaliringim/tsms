@@ -5,7 +5,10 @@ import {
   parseWorkerEnvironment,
 } from '../dist/env.js';
 
+// Stage 2.9: NODE_ENV has no default, so every fixture states it. Production-only requirements are covered in
+// production-requirements.test.mjs; these fixtures are for the development and test modes.
 const valid = {
+  NODE_ENV: 'development',
   DATABASE_URL: 'postgresql://tsms:secret@127.0.0.1:5432/tsms',
   REDIS_URL: 'redis://:secret@127.0.0.1:6379',
 };
@@ -36,7 +39,7 @@ describe('server environment boundary', () => {
   });
 
   it('defaults password recovery to disabled with no URL base', () => {
-    const parsed = parseApiEnvironment({ ...apiValid, NODE_ENV: 'production' });
+    const parsed = parseApiEnvironment({ ...apiValid, NODE_ENV: 'test' });
     expect(parsed.API_PASSWORD_RECOVERY_DELIVERY_MODE).toBe('disabled');
     expect(parsed.API_PASSWORD_RECOVERY_URL_BASE).toBeUndefined();
   });
@@ -95,16 +98,17 @@ describe('server environment boundary', () => {
   });
 
   it('fails when a required infrastructure endpoint is missing', () => {
-    expect(() => parseApiEnvironment({ REDIS_URL: valid.REDIS_URL, ...trustedOrigins })).toThrow(
-      'Invalid environment configuration: DATABASE_URL',
-    );
+    const mode = { NODE_ENV: valid.NODE_ENV };
     expect(() =>
-      parseApiEnvironment({ DATABASE_URL: valid.DATABASE_URL, ...trustedOrigins }),
+      parseApiEnvironment({ ...mode, REDIS_URL: valid.REDIS_URL, ...trustedOrigins }),
+    ).toThrow('Invalid environment configuration: DATABASE_URL');
+    expect(() =>
+      parseApiEnvironment({ ...mode, DATABASE_URL: valid.DATABASE_URL, ...trustedOrigins }),
     ).toThrow('Invalid environment configuration: REDIS_URL');
-    expect(() => parseWorkerEnvironment({ REDIS_URL: valid.REDIS_URL })).toThrow(
+    expect(() => parseWorkerEnvironment({ ...mode, REDIS_URL: valid.REDIS_URL })).toThrow(
       'Invalid environment configuration: DATABASE_URL',
     );
-    expect(() => parseWorkerEnvironment({ DATABASE_URL: valid.DATABASE_URL })).toThrow(
+    expect(() => parseWorkerEnvironment({ ...mode, DATABASE_URL: valid.DATABASE_URL })).toThrow(
       'Invalid environment configuration: REDIS_URL',
     );
   });
@@ -144,10 +148,10 @@ describe('server environment boundary', () => {
         UNRELATED_SECRET: 'private',
       }),
     ).toEqual({
-      NODE_ENV: 'test',
       API_HOST: '127.0.0.1',
       API_PORT: 4100,
       ...valid,
+      NODE_ENV: 'test',
       API_TRUSTED_ORIGINS: ['https://app.example.com', 'http://127.0.0.1:3000'],
       API_RATE_LIMIT_HMAC_SECRET: rateLimitSecret.API_RATE_LIMIT_HMAC_SECRET,
       API_PASSWORD_RECOVERY_DELIVERY_MODE: 'disabled',
